@@ -1,0 +1,66 @@
+# Changelog
+
+All notable changes to `waker-ai`.
+
+## v1.0.0 — 2026-11-08
+
+### Added
+
+- `waker plan --via opencode`: one planning turn converts a vague prompt into a
+  `tasks.yaml` contract, then the deterministic linter validates it (fail closed).
+- `waker run --resume <id>`: continue an interrupted or failed run from its
+  on-disk ledger, with a fresh kick budget and a `generation` suffix for kick
+  artifacts (`kick-N-g1`) so the audit trail is preserved.
+- `waker detect`: detects pytest / npm / cargo / go / make test and prints
+  confidence + source.
+- `.github/workflows/publish.yml`: PyPI Trusted Publishing (OIDC) with an API
+  token fallback.
+- `docs/demo.gif` + `scripts/make_demo_gif.py`: generated README demo.
+- `docs/demo-45s.md`: 45-second recording script.
+- `CHANGELOG.md`, `docs/release-v1.0.0.md`.
+
+### Changed
+
+- State now stores adapter/model/permission/binary/constraint data so a run can
+  be resumed exactly.
+- `RunState.elapsed` includes time from previous generations.
+- Claude is documented as **beta** (unit-tested, no live CI run).
+- Cost guard scope documented: exact for OpenCode, best-effort for Claude,
+  0 for generic/PTY.
+
+### Tests
+
+- 127+ automated tests (Windows 11 / Python 3.12), plus a gated live OpenCode
+  E2E. CI matrix: Ubuntu + Windows × Python 3.11 + 3.12.
+
+## v0.3.1 — 2026-11-07
+
+- `waker setup`: detect installed CLIs and install the skill globally.
+- Fallback to existing config directories when no CLI is on PATH.
+- README one-command onboarding note.
+
+## v0.3.0 — 2026-11-07
+
+- Claude Code T1 adapter (stream-json, resume, permission mode).
+- PTY tier-3 adapter (ConPTY + pyte) on Windows.
+- `waker doctor` with adapter tiers and a safe injector self-test.
+- Per-scope verify scheduling + full-suite gating.
+- Web dashboard (static + live) and Rich watch TUI.
+- Wheel packaging, CI matrix, release v0.3.0.
+
+## v0.2.0 — 2026-11-07
+
+- OpenCode T1 live: `--session`, `--format json`, cost from session export.
+- Cost guard (`--max-cost`).
+- Daemon: `start --detach`, `stop`, loopback `serve`.
+- Skill installers for OpenCode / Claude / Gemini / generic.
+- Windows process-tree kill (Job Object + `taskkill /T /F`) and live freeze probe.
+
+## v0.1.0 — 2026-11-07
+
+- Deterministic 4-bucket planner + contract lint.
+- State, ledger, append-only events, git checkpoints.
+- Evidence gates: scope diff, verify exit code, test hash (TAMPER).
+- Pure detector and the wake loop.
+- Markdown status + Rich watch.
+- Fake agents (lazy / liar / tamper / freeze / blocked) and 60 tests.

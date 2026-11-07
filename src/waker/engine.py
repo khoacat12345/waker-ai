@@ -50,6 +50,26 @@ DEFAULT_TEST_GLOBS = [
 ]
 
 
+def build_adapter_from_state(state: RunState):
+    """Recreate the adapter used by an existing run (for ``--resume``)."""
+    from .adapters.claude import ClaudeAdapter
+    from .adapters.opencode import OpenCodeAdapter
+    from .adapters.pty import PtyAdapter
+
+    name = state.adapter or "generic"
+    if name == "opencode":
+        return OpenCodeAdapter(model=state.model, binary=state.binary or "opencode")
+    if name == "claude":
+        return ClaudeAdapter(
+            binary=state.binary or "claude", permission_mode=state.permission_mode
+        )
+    if name == "pty":
+        return PtyAdapter(state.agent_command)
+    if not state.agent_command:
+        raise RuntimeError("run has no agent command to resume")
+    return GenericProcessAdapter(state.agent_command)
+
+
 @dataclass
 class EngineConfig:
     repo: str
@@ -71,6 +91,10 @@ class EngineConfig:
     freeze_probe: bool = True
     use_job: bool = True
     full_suite_every: int = 0
+    adapter_name: str = "generic"
+    model: str | None = None
+    permission_mode: str = "acceptEdits"
+    binary: str | None = None
     run_id: str | None = None
 
 
@@ -130,6 +154,14 @@ class Engine:
             started_at=utcnow(),
             tasks=[t.to_dict() for t in cfg.tasks],
             session_id=f"ses_waker_{run_id}",
+            constraints=[t.to_dict() for t in cfg.constraints],
+            adapter=cfg.adapter_name,
+            model=cfg.model,
+            permission_mode=cfg.permission_mode,
+            binary=cfg.binary,
+            contract_path=str(Path(cfg.contract_path).resolve())
+            if cfg.contract_path
+            else None,
             max_kicks=cfg.max_kicks,
             turn_timeout=cfg.turn_timeout,
             freeze_after=cfg.freeze_after,
@@ -180,6 +212,97 @@ class Engine:
         self.events = events
         return state
 
+    @classmethod
+    def from_run(
+        cls,
+        repo: str | Path,
+        run_id: str,
+        adapter: Adapter | None = None,
+        max_kicks: int | None = None,
+    ) -> "Engine":
+        """Attach to an interrupted (or failed) run and continue it."""
+        root = Path(repo).resolve()
+        paths = RunPaths(root, run_id)
+        if not paths.state.exists():
+            raise FileNotFoundError(f"run {run_id} not found in {root}")
+        state = RunState.load(paths.state)
+        if Path(state.repo).resolve() != root:
+            raise RuntimeError(
+                f"run {run_id} belongs to {state.repo}, not {root}"
+            )
+
+        tasks = [Task.from_dict(item) for item in state.tasks]
+        constraints = [Task.from_dict(item) for item in state.constraints]
+        cfg = EngineConfig(
+            repo=str(root),
+            tasks=tasks,
+            constraints=constraints,
+            agent_command=state.agent_command,
+            test_command=state.test_command,
+            prompt=state.prompt,
+            contract_path=state.contract_path,
+            max_kicks=max_kicks or state.max_kicks,
+            turn_timeout=state.turn_timeout,
+            freeze_after=state.freeze_after,
+            alive_threshold=state.alive_threshold,
+            max_wall_clock=state.max_wall_clock,
+            max_cost_usd=state.max_cost_usd,
+            adapter_name=state.adapter,
+            model=state.model,
+            permission_mode=state.permission_mode,
+            binary=state.binary,
+            run_id=run_id,
+        )
+        engine = cls(cfg, adapter or build_adapter_from_state(state))
+        engine.state = state
+        engine.paths = paths
+        engine.events = EventLog(paths.events)
+        cache_path = paths.root / "verify_cache.json"
+        if cache_path.exists():
+            try:
+                engine._verify_cache = read_json(cache_path)
+            except (ValueError, OSError):
+                engine._verify_cache = {}
+
+        previous_status = state.status
+        state.generation += 1
+        state.elapsed_offset += state.elapsed
+        state.started_ts = time.time()
+        state.ended_ts = None
+        state.status = "running"
+        state.diagnosis = None
+        if max_kicks:
+            state.max_kicks = max(max_kicks, state.kicks + 1)
+        else:
+            state.max_kicks = state.kicks + max(1, state.max_kicks)
+        state.save(paths.state)
+
+        ledger = (
+            read_json(paths.ledger)
+            if paths.ledger.exists()
+            else new_ledger([*tasks, *constraints])
+        )
+        engine._next_prompt = injector.build_wake_prompt(
+            Diagnosis.PARTIAL,
+            tasks,
+            constraints,
+            ledger,
+            [],
+            state.test_command,
+            state.kicks,
+            state.max_kicks,
+            notes=["Run khôi phục sau khi bị gián đoạn. Tiếp tục từ chỗ còn thiếu."],
+        )
+        engine.events.append(
+            "resume",
+            run_id=run_id,
+            generation=state.generation,
+            previous_status=previous_status,
+            kicks=state.kicks,
+            max_kicks=state.max_kicks,
+        )
+        return engine
+
     # ---------------------------------------------------------------------- run
 
     def run(self) -> RunResult:
@@ -191,7 +314,7 @@ class Engine:
             while True:
                 kick = state.kicks
                 prompt = self._next_prompt
-                prompt_path = self.paths.kick_prompt(kick)
+                prompt_path = self.paths.kick_prompt(kick, state.generation)
                 prompt_path.write_text(prompt, encoding="utf-8")
                 ctx = TurnContext(
                     repo=str(self.repo),
@@ -495,11 +618,11 @@ class Engine:
         }
         write_json_atomic(self.paths.ledger, ledger)
 
-        (self.paths.kick_dir(kick) / "stdout.log").write_text(
+        (self.paths.kick_dir(kick, self.state.generation) / "stdout.log").write_text(
             turn.output, encoding="utf-8", errors="replace"
         )
         write_json_atomic(
-            self.paths.kick_result(kick),
+            self.paths.kick_result(kick, self.state.generation),
             {
                 "kick": kick,
                 "diagnosis": diag.value,

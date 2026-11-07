@@ -15,6 +15,7 @@ htmlcov/
 !.waker/runs/
 .waker/runs/*
 !.waker/runs/phase*_report.md
+!.waker/runs/v1_final_report.md
 
 # local agent scratch
 .fake_state.json

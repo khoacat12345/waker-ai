@@ -356,6 +356,20 @@ def load_tasks(path: str | Path) -> list[Task]:
     return [Task.from_dict(item) for item in items]
 
 
+def parse_contract_text(text: str) -> PlanBundle:
+    """Parse a YAML document (as returned by an LLM planner)."""
+    raw = yaml.safe_load(text) or []
+    if isinstance(raw, dict):
+        items = raw.get("tasks") or raw.get("constraints") or []
+    else:
+        items = raw
+    tasks = [Task.from_dict(item) for item in items if isinstance(item, dict)]
+    return PlanBundle(
+        tasks=[task for task in tasks if task.kind == "work"],
+        constraints=[task for task in tasks if task.kind != "work"],
+    )
+
+
 def write_tasks(path: str | Path, bundle: PlanBundle) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(render_yaml(bundle), encoding="utf-8")

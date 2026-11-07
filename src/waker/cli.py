@@ -33,11 +33,16 @@ def _parse_bundle(args) -> planner.PlanBundle:
         text = args.prompt
     else:
         raise SystemExit("cần --prompt hoặc --file")
-    if args.planner != "rules":
-        raise SystemExit(
-            f"--planner {args.planner} chưa có trong Phase 2 (chỉ 'rules', 0 token)."
+    if args.via == "rules":
+        return planner.parse_prompt(text)
+    from .llm_plan import generate_contract
+
+    try:
+        return generate_contract(
+            text, args.repo, model=args.model, binary=args.binary
         )
-    return planner.parse_prompt(text)
+    except (RuntimeError, ValueError) as exc:
+        raise SystemExit(f"planner lỗi: {exc}")
 
 
 def _load_contract(args) -> tuple[list[Task], list[Task]]:
@@ -58,13 +63,15 @@ def _lint_or_fail(args, tasks: list[Task], constraints: list[Task]) -> int | Non
 
 
 def _build_adapter(args):
-    if args.adapter == "opencode":
+    adapter = args.adapter or "generic"
+    if adapter == "opencode":
         return OpenCodeAdapter(model=args.model, binary=args.binary or "opencode")
-    if args.adapter == "claude":
+    if adapter == "claude":
         return ClaudeAdapter(
-            binary=args.binary or "claude", permission_mode=args.permission_mode
+            binary=args.binary or "claude",
+            permission_mode=args.permission_mode or "acceptEdits",
         )
-    if args.adapter == "pty":
+    if adapter == "pty":
         if not args.agent:
             raise SystemExit("--agent bắt buộc khi dùng --adapter pty")
         return PtyAdapter(args.agent)
@@ -97,10 +104,27 @@ def cmd_lint(args) -> int:
 
 
 def cmd_run(args) -> int:
+    if args.resume:
+        paths = RunPaths(args.repo, args.resume)
+        state = RunState.load(paths.state)
+        adapter = None
+        if args.adapter is not None or args.agent is not None:
+            adapter = _build_adapter(args)
+        engine = Engine.from_run(
+            args.repo, args.resume, adapter=adapter, max_kicks=args.max_kicks
+        )
+        result = engine.run()
+        print(render_markdown(RunState.load(paths.state), read_json(paths.ledger)))
+        print(f"\nreport: {result.report_path}")
+        print(f"kết luận: {result.diagnosis.value} (exit {result.exit_code})")
+        return result.exit_code
+
     tasks, constraints = _load_contract(args)
     failed = _lint_or_fail(args, tasks, constraints)
     if failed is not None:
         return failed
+    adapter_name = args.adapter or "generic"
+    max_kicks = args.max_kicks if args.max_kicks is not None else 5
     config = EngineConfig(
         repo=args.repo,
         tasks=tasks,
@@ -109,7 +133,7 @@ def cmd_run(args) -> int:
         test_command=args.test,
         prompt=args.prompt or "",
         contract_path=args.tasks,
-        max_kicks=args.max_kicks,
+        max_kicks=max_kicks,
         turn_timeout=args.turn_timeout,
         verify_timeout=args.verify_timeout,
         freeze_after=args.freeze_after,
@@ -118,6 +142,10 @@ def cmd_run(args) -> int:
         freeze_probe=not args.no_freeze_probe,
         use_job=not args.no_job,
         full_suite_every=args.full_suite_every,
+        adapter_name=adapter_name,
+        model=args.model,
+        permission_mode=args.permission_mode or "acceptEdits",
+        binary=args.binary,
         run_id=args.run_id,
     )
     result = Engine(config, _build_adapter(args)).run()
@@ -130,26 +158,30 @@ def cmd_run(args) -> int:
 
 def _run_flags(args) -> list[str]:
     flags: list[str] = ["--repo", str(Path(args.repo).resolve())]
+    if args.resume:
+        flags.extend(["--resume", args.resume])
+    else:
+        for flag, value in (("--tasks", args.tasks), ("--prompt", args.prompt)):
+            if value not in (None, ""):
+                flags.extend([flag, str(value)])
     for flag, value in (
-        ("--tasks", args.tasks),
-        ("--prompt", args.prompt),
         ("--test", args.test),
         ("--agent", args.agent),
         ("--model", args.model),
+        ("--binary", args.binary),
+        ("--permission-mode", args.permission_mode),
     ):
         if value not in (None, ""):
             flags.extend([flag, str(value)])
-    flags.extend(["--adapter", args.adapter])
-    flags.extend(["--max-kicks", str(args.max_kicks)])
+    if args.adapter:
+        flags.extend(["--adapter", args.adapter])
+    max_kicks = args.max_kicks if args.max_kicks is not None else 5
+    flags.extend(["--max-kicks", str(max_kicks)])
     flags.extend(["--turn-timeout", str(args.turn_timeout)])
     flags.extend(["--verify-timeout", str(args.verify_timeout)])
     flags.extend(["--freeze-after", str(args.freeze_after)])
     flags.extend(["--max-wall-clock", str(args.max_wall_clock)])
     flags.extend(["--full-suite-every", str(args.full_suite_every)])
-    if args.permission_mode:
-        flags.extend(["--permission-mode", args.permission_mode])
-    if args.binary:
-        flags.extend(["--binary", args.binary])
     if args.max_cost:
         flags.extend(["--max-cost", str(args.max_cost)])
     if args.no_freeze_probe:
@@ -162,11 +194,12 @@ def _run_flags(args) -> list[str]:
 
 
 def cmd_start(args) -> int:
-    tasks, constraints = _load_contract(args)
-    failed = _lint_or_fail(args, tasks, constraints)
-    if failed is not None:
-        return failed
-    run_id = args.run_id or new_run_id()
+    if not args.resume:
+        tasks, constraints = _load_contract(args)
+        failed = _lint_or_fail(args, tasks, constraints)
+        if failed is not None:
+            return failed
+    run_id = args.resume or args.run_id or new_run_id()
     record = start_detached(args.repo, _run_flags(args), run_id)
     print(json.dumps(record, ensure_ascii=False, indent=2))
     print(f"\nĐang chạy ngầm. Theo dõi: waker status --repo {args.repo} --run {run_id}")
@@ -290,6 +323,23 @@ def cmd_dashboard(args) -> int:
     return 0
 
 
+def cmd_detect(args) -> int:
+    from .detect import detect_test_commands
+
+    results = detect_test_commands(args.repo)
+    if args.json:
+        print(json.dumps([item.to_dict() for item in results], ensure_ascii=False, indent=2))
+    elif not results:
+        print(
+            "không phát hiện test runner. Dùng --test để chỉ định.",
+            file=sys.stderr,
+        )
+    else:
+        for item in results:
+            print(f"{item.confidence:3d}%  {item.command:<24} ({item.source})")
+    return 0 if results else 1
+
+
 def cmd_report(args) -> int:
     if args.run:
         paths = RunPaths(args.repo, args.run)
@@ -309,14 +359,15 @@ def cmd_report(args) -> int:
 def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--tasks")
     parser.add_argument("--prompt")
+    parser.add_argument("--resume", default=None, help="run id để chạy tiếp")
     parser.add_argument("--test", default=None)
     parser.add_argument("--agent", default=None, help="lệnh agent cho adapter generic/pty")
-    parser.add_argument("--adapter", choices=["generic", "opencode", "claude", "pty"], default="generic")
+    parser.add_argument("--adapter", choices=["generic", "opencode", "claude", "pty"], default=None)
     parser.add_argument("--model", default=None, help="provider/model cho OpenCode")
     parser.add_argument("--binary", default=None, help="đường dẫn CLI (opencode/claude)")
-    parser.add_argument("--permission-mode", default="acceptEdits", help="Claude Code permission mode")
+    parser.add_argument("--permission-mode", default=None, help="Claude Code permission mode")
     parser.add_argument("--repo", default=".")
-    parser.add_argument("--max-kicks", type=int, default=5)
+    parser.add_argument("--max-kicks", type=int, default=None)
     parser.add_argument("--max-cost", type=float, default=0.0, help="USD; 0 = tắt cost guard")
     parser.add_argument("--full-suite-every", type=int, default=0, help="chạy full suite mỗi N kick")
     parser.add_argument("--turn-timeout", type=float, default=900.0)
@@ -342,7 +393,9 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--file")
     plan.add_argument("--out", default=".waker/tasks.yaml")
     plan.add_argument("--repo", default=".")
-    plan.add_argument("--planner", default="rules", choices=["rules"])
+    plan.add_argument("--via", "--planner", dest="via", choices=["rules", "opencode"], default="rules")
+    plan.add_argument("--model", default=None)
+    plan.add_argument("--binary", default=None)
     plan.add_argument("--json", action="store_true")
     plan.set_defaults(func=cmd_plan)
 
@@ -386,6 +439,11 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--repo", default=".")
     report.add_argument("--run")
     report.set_defaults(func=cmd_report)
+
+    detect_parser = sub.add_parser("detect", help="dò test runner trong repo")
+    detect_parser.add_argument("--repo", default=".")
+    detect_parser.add_argument("--json", action="store_true")
+    detect_parser.set_defaults(func=cmd_detect)
 
     doctor = sub.add_parser("doctor", help="kiểm tra môi trường và adapter tier")
     doctor.add_argument("--json", action="store_true")

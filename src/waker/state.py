@@ -138,6 +138,14 @@ class RunState:
     tasks: list[dict[str, Any]]
     session_id: str
     agent_session_id: str | None = None
+    constraints: list[dict[str, Any]] = field(default_factory=list)
+    adapter: str = "generic"
+    model: str | None = None
+    permission_mode: str = "acceptEdits"
+    binary: str | None = None
+    contract_path: str | None = None
+    generation: int = 0
+    elapsed_offset: float = 0.0
     max_kicks: int = 5
     kicks: int = 0
     turn_timeout: float = 900.0
@@ -159,7 +167,7 @@ class RunState:
     @property
     def elapsed(self) -> float:
         end = self.ended_ts if self.ended_ts is not None else time.time()
-        return max(0.0, end - self.started_ts)
+        return max(0.0, self.elapsed_offset + end - self.started_ts)
 
     def task_objects(self) -> list[Task]:
         return [Task.from_dict(item) for item in self.tasks]
@@ -185,16 +193,17 @@ class RunPaths:
         self.events = self.root / "events.jsonl"
         self.report = self.root / "report.md"
 
-    def kick_dir(self, index: int) -> Path:
-        path = self.root / f"kick-{index}"
+    def kick_dir(self, index: int, generation: int = 0) -> Path:
+        name = f"kick-{index}" if generation == 0 else f"kick-{index}-g{generation}"
+        path = self.root / name
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    def kick_prompt(self, index: int) -> Path:
-        return self.kick_dir(index) / "prompt.txt"
+    def kick_prompt(self, index: int, generation: int = 0) -> Path:
+        return self.kick_dir(index, generation) / "prompt.txt"
 
-    def kick_result(self, index: int) -> Path:
-        return self.kick_dir(index) / "result.json"
+    def kick_result(self, index: int, generation: int = 0) -> Path:
+        return self.kick_dir(index, generation) / "result.json"
 
 
 class EventLog:

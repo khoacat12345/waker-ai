@@ -135,3 +135,91 @@ def test_cli_dashboard_static(repo: Path, tasks: list[Task], tmp_path: Path, cap
     assert target.exists()
     assert "waker" in target.read_text(encoding="utf-8").lower()
     capsys.readouterr()
+
+
+
+def test_cli_plan_via_opencode(tmp_path: Path, repo: Path, monkeypatch, capsys):
+    from waker.models import PlanBundle, Task
+
+    monkeypatch.setattr(
+        "waker.llm_plan.generate_contract",
+        lambda text, repo_path, model=None, binary=None: PlanBundle(
+            tasks=[
+                Task(
+                    id="T1",
+                    desc="auth",
+                    scope=["src/auth/**"],
+                    verify="pytest tests/auth -q",
+                )
+            ]
+        ),
+    )
+    out = tmp_path / "tasks.yaml"
+    code = main(
+        [
+            "plan",
+            "--via",
+            "opencode",
+            "--prompt",
+            "làm auth",
+            "--out",
+            str(out),
+            "--repo",
+            str(repo),
+        ]
+    )
+    assert code == 0
+    assert "T1" in out.read_text(encoding="utf-8")
+    capsys.readouterr()
+
+
+def test_cli_detect_json(repo: Path, capsys):
+    (repo / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
+    code = main(["detect", "--repo", str(repo), "--json"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "pytest -q" in out
+
+
+def test_cli_resume_after_breaker(repo: Path, capsys):
+    from conftest import exists_cmd, fake_agent
+    from waker.models import PlanBundle, Task
+    from waker.planner import write_tasks
+    from waker.state import latest_run
+
+    contract = repo / "tasks.yaml"
+    write_tasks(
+        contract,
+        PlanBundle(
+            tasks=[
+                Task(id="T1", desc="write a", scope=["src/a.txt"], verify=exists_cmd("src/a.txt")),
+                Task(id="T2", desc="write b", scope=["src/b.txt"], verify=exists_cmd("src/b.txt")),
+            ]
+        ),
+    )
+    test_cmd = exists_cmd("src/a.txt", "src/b.txt")
+    first = main(
+        [
+            "run",
+            "--repo",
+            str(repo),
+            "--tasks",
+            str(contract),
+            "--test",
+            test_cmd,
+            "--agent",
+            fake_agent("lazy"),
+            "--adapter",
+            "generic",
+            "--max-kicks",
+            "0",
+        ]
+    )
+    assert first == 2
+    run_id = latest_run(repo)
+    assert run_id
+    capsys.readouterr()
+
+    second = main(["run", "--resume", run_id, "--repo", str(repo)])
+    assert second == 0
+    assert (repo / "src" / "b.txt").exists()
