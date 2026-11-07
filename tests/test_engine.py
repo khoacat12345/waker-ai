@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from conftest import exists_cmd, fake_agent
+from conftest import exists_cmd, fake_agent, py
 
 from waker.engine import Engine, EngineConfig
 from waker.models import Diagnosis, Task
@@ -117,3 +117,72 @@ def test_tampered_contract_blocks_the_run(tmp_path: Path):
     tasks = planner.load_tasks(contract)
     issues = planner.lint_tasks(tasks)
     assert planner.has_errors(issues)
+
+
+def test_verify_cache_avoids_rerunning_unchanged_tasks(repo: Path):
+    t1 = Task(
+        id="T1",
+        desc="write a",
+        scope=["src/a.txt"],
+        verify=py(
+            "import os,sys; open('calls_t1.txt','a').write('x'); "
+            "sys.exit(0 if os.path.exists('src/a.txt') else 1)"
+        ),
+    )
+    t2 = Task(
+        id="T2",
+        desc="write b",
+        scope=["src/b.txt"],
+        verify=py(
+            "import os,sys; open('calls_t2.txt','a').write('x'); "
+            "sys.exit(0 if os.path.exists('src/b.txt') else 1)"
+        ),
+    )
+    config = EngineConfig(
+        repo=str(repo),
+        tasks=[t1, t2],
+        agent_command=fake_agent("lazy"),
+        test_command=exists_cmd("src/a.txt", "src/b.txt"),
+        max_kicks=3,
+        turn_timeout=30,
+        verify_timeout=30,
+        freeze_probe=False,
+    )
+    result = Engine(config).run()
+
+    assert result.diagnosis is Diagnosis.DONE
+    assert len((repo / "calls_t1.txt").read_text(encoding="utf-8")) == 1
+    assert len((repo / "calls_t2.txt").read_text(encoding="utf-8")) == 1
+
+
+def test_full_suite_is_skipped_until_candidate(repo: Path):
+    suite = repo / "suite.txt"
+    test_command = py(
+        "import os,sys; open('suite.txt','a').write('x'); "
+        "sys.exit(0 if os.path.exists('src/a.txt') and os.path.exists('src/b.txt') else 1)"
+    )
+    tasks = [
+        Task(id="T1", desc="write a", scope=["src/a.txt"], verify=exists_cmd("src/a.txt")),
+        Task(id="T2", desc="write b", scope=["src/b.txt"], verify=exists_cmd("src/b.txt")),
+    ]
+    config = EngineConfig(
+        repo=str(repo),
+        tasks=tasks,
+        agent_command=fake_agent("lazy"),
+        test_command=test_command,
+        max_kicks=3,
+        turn_timeout=30,
+        verify_timeout=30,
+        freeze_probe=False,
+    )
+    result = Engine(config).run()
+
+    assert result.diagnosis is Diagnosis.DONE
+    # one baseline run at prepare + one at the candidate-DONE boundary
+    assert len(suite.read_text(encoding="utf-8")) == 2
+    kick0 = json.loads(
+        (RunPaths(repo, result.run_id).root / "kick-0" / "result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert kick0["test_skipped"] is True

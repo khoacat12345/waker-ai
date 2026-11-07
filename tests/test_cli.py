@@ -95,3 +95,23 @@ def test_cli_install_skill(tmp_path: Path, capsys):
     assert target.exists()
     assert "waker" in target.read_text(encoding="utf-8").lower()
     capsys.readouterr()
+
+
+
+def test_cli_doctor_json(capsys):
+    code = main(["doctor", "--json"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert '"environment"' in out
+    assert '"tools"' in out
+
+
+def test_cli_dashboard_static(repo: Path, tasks: list[Task], tmp_path: Path, capsys):
+    _run_good(repo, tasks)
+    capsys.readouterr()
+    target = tmp_path / "dash.html"
+    code = main(["dashboard", "--repo", str(repo), "--out", str(target)])
+    assert code == 0
+    assert target.exists()
+    assert "waker" in target.read_text(encoding="utf-8").lower()
+    capsys.readouterr()

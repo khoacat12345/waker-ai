@@ -2,46 +2,88 @@
 
 **Never let your AI coding agent sleep on the job again.**
 
-`waker` is an independent watchdog & supervisor for AI coding agents. It watches
-the disk (not the agent's words), verifies your contract, and wakes the agent up
-until every task has evidence and every gate is green.
+`waker` is an independent supervisor for AI coding agents. It watches the disk
+(not the agent's words), verifies a frozen contract, and wakes the agent up until
+every task has on-disk evidence and every gate is green.
 
 > Agent claims. Waker verifies. The disk decides.
 
-## Status
+```text
+$ waker run --tasks .waker/tasks.yaml --adapter opencode --test "pytest -q"
 
-| Phase | Scope | State |
-|---|---|---|
-| 1 | planner, contract lint, evidence, detector, engine loop, status/watch | ✅ done |
-| 2 | OpenCode T1 live, cost guard, daemon + detach, skills, job object + live freeze probe | ✅ done |
-| 3 | PTY tier-3 adapters, browser dashboard, verify scheduling, Claude live | ⏳ planned |
+**waker · run cff9c232 · 1/1 — 100%**
+`████████████████`  ⏱ 00:45  🔁 0/5  🧪 PASS  💰 $0.0016
+
+|   | Task | Work              | Evidence      | Gate |
+|---|------|-------------------|---------------|------|
+| ✅ | T1   | create live.txt   | src/live.txt  | pass |
+```
+
+## Why
+
+AI agents do four things that ruin unattended runs:
+
+1. **Stop early** — finish 1 of 5 tasks, exit 0, go quiet.
+2. **Lie** — print "all tasks completed" while the test suite is red.
+3. **Cheat** — edit the tests until they pass.
+4. **Spin** — rewrite the same two lines five times with no progress.
+
+Waker handles all four because it never trusts the agent's output. It only
+trusts `git diff` and exit codes.
+
+## Feature comparison
+
+| Capability | Manual babysitting | `until` loop in bash | Agent built-in "auto" | **waker-ai** |
+|---|:---:|:---:|:---:|:---:|
+| Verifies work on disk (not claims) | ❌ | partial | ❌ | ✅ |
+| Session resume across wakes | ❌ | ❌ | partial | ✅ T1 |
+| Detects test tampering | ❌ | ❌ | ❌ | ✅ |
+| Detects "claimed done, tests red" | ❌ | ❌ | ❌ | ✅ |
+| Detects frozen / thrashing agents | ❌ | ❌ | ❌ | ✅ |
+| Per-task checklist with evidence | ❌ | ❌ | partial | ✅ |
+| Cost guard (USD) | ❌ | ❌ | ❌ | ✅ |
+| Works with many CLIs | ❌ | ✅ | ❌ | ✅ T1/T2/T3 |
+| Survives chatbox close (`--detach`) | ❌ | ✅ | ❌ | ✅ |
+| Live TUI + web dashboard | ❌ | ❌ | ❌ | ✅ |
+| Runs 100% offline for parsing/lint | ❌ | ✅ | ❌ | ✅ 0 token |
 
 ## Install
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -e .
-waker --version
+pip install waker-ai
+
+# Windows PTY tier-3 (optional)
+pip install "waker-ai[pty]"
 ```
 
-## Quick start
+From source:
 
 ```bash
-# 1. turn a prompt into a mechanical contract (0 token)
+git clone https://github.com/khoacat12345/waker-ai
+cd waker-ai
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+pip install -e ".[dev]"
+pytest
+```
+
+## Quickstart (60 seconds)
+
+```bash
+# 1) turn a prompt into a mechanical contract - 0 token, deterministic
 waker plan --prompt "Phase 1: auth, scope: src/auth/**, verify: pytest tests/auth -q"
 
-# 2. validate it (missing scope/verify/overlap = fail closed)
+# 2) validate the contract - fail closed on missing scope/verify
 waker lint --tasks .waker/tasks.yaml
 
-# 3. supervise an OpenCode agent, with cost + freeze guards
+# 3) supervise the agent
 waker run --tasks .waker/tasks.yaml \
   --adapter opencode --model opencode-go/deepseek-v4.1-flash \
   --test "pytest tests/ -q" \
   --max-kicks 5 --max-cost 0.50
 ```
 
-Run it in the background instead:
+Background mode, then watch from anywhere:
 
 ```bash
 waker start --detach --tasks .waker/tasks.yaml \
@@ -49,17 +91,11 @@ waker start --detach --tasks .waker/tasks.yaml \
 
 waker status --repo .
 waker watch --repo .
+waker dashboard --repo . --open
 waker stop --repo .
 ```
 
-Or expose the control plane to a chatbox skill:
-
-```bash
-waker serve --port 47821
-curl http://127.0.0.1:47821/status?repo=.
-```
-
-Install the skill where your agent looks for it:
+Install the chatbox skill:
 
 ```bash
 waker install-skill --for opencode   # .opencode/skills/waker/SKILL.md
@@ -68,7 +104,7 @@ waker install-skill --for gemini     # .gemini/config/skills/waker/SKILL.md
 waker install-skill --for generic    # AGENTS.md block (idempotent)
 ```
 
-## How it decides "done"
+## How done is decided
 
 For every task:
 
@@ -76,62 +112,77 @@ For every task:
 done(T) = (git diff ∩ T.scope ≠ ∅) and (T.verify exits 0)
 ```
 
-Nothing else counts. An agent saying "all tasks completed" is treated as a hint,
-never as evidence.
-
-| Gate | What it stops |
+| Gate | Stops |
 |---|---|
 | `scope ∩ diff` | touching an unrelated file to look busy |
 | `verify` exit 0 | claiming success while tests are red |
 | test hash | editing the exam (`TAMPER` → restore + kick) |
 | contract hash | moving the goalposts mid-run |
-| cost + kick + wall-clock limits | burning the budget in a retry loop |
+| cost / kicks / wall clock | burning the budget in a retry loop |
 
-## Windows safety
+## Adapters
 
-- Runs are assigned to a **Win32 Job Object** with
-  `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`; a fallback `taskkill /T /F` is always
-  issued, so grandchildren die too.
-- **Live freeze probe**: no stdout *and* no file activity for
-  `--freeze-after` seconds → the tree is killed and the turn is marked
-  `FROZEN` instead of waiting for the full timeout.
+| Tier | Mechanism | CLIs |
+|---|---|---|
+| **T1** | native session resume | OpenCode (`run --session --format json`), Claude Code (`-p --resume --output-format stream-json`) |
+| **T2** | fresh process + context digest | any CLI with a non-interactive flag (`aider --message`, `gemini -p`, custom commands) |
+| **T3** | PTY keystroke injection (ConPTY + pyte) | any text-mode TUI, even without a headless mode |
 
-## OpenCode adapter notes (v2.0.32, verified)
+`waker doctor` detects what is installed and prints the tier:
 
-- `opencode run --session <id> --auto --format json` emits JSONL events
-  (`step_start`, `text`, `tool_use`, ...). **No cost in the stream.**
-- Cost/tokens are read from `opencode session export <id>`
-  (`info.cost`, `info.tokens`) before and after each turn; the delta is charged
-  to that turn.
-- Prompts are passed as an **argv element**, never through a shell: shell
-  quoting corrupts prompts containing quotes/backslashes. On Windows the adapter
-  resolves the real `opencode.exe` (or `WAKER_OPENCODE_BIN`).
-
-## Repo layout
-
-```
-src/waker/
-├── planner.py          # deterministic 4-bucket parser + contract lint
-├── state.py            # run state, ledger, events, checkpoints
-├── evidence.py         # diff/scope matching, test hash, tamper restore
-├── detector.py         # pure Observation -> Diagnosis
-├── engine.py           # spawn -> observe -> verify -> diagnose -> wake
-├── process.py          # live streaming, freeze probe, tree kill
-├── winjob.py           # Win32 Job Object wrapper
-├── opencode_events.py  # JSON stream + session usage parsing
-├── daemon.py           # detached runs + loopback HTTP control plane
-├── skill_install.py    # install-skill for 4 providers
-├── adapters/           # generic (T2), opencode (T1)
-└── ui.py               # markdown + Rich live
-tests/                  # 86 automated tests + gated live E2E
+```text
+$ waker doctor --inject-test
+OK opencode      tier T1  (opencode 2.0.32)
+OK claude        tier T1  (claude 1.x)
+-- aider         tier -
+OK any-text-cli  tier T3  (pywinpty)
+injector self-test: PASS - marker seen
 ```
 
-## Tests
+The injector self-test drives a harmless shell, never an AI session.
 
-```bash
-pytest tests/                 # 86 passed, live test skipped by default
-$env:WAKER_LIVE_TEST="1"      # real OpenCode E2E
-pytest tests/test_live_opencode.py -q
+## Safety on Windows
+
+- Every run is assigned to a **Win32 Job Object**
+  (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`); `taskkill /T /F` is always issued as a
+  fallback, so grandchildren die too.
+- **Live freeze probe**: no stdout **and** no file activity for `--freeze-after`
+  seconds → kill the tree and mark the turn `FROZEN`; no waiting for a
+  15-minute timeout.
+- Prompts are passed as argv, never through a shell (shell quoting corrupts
+  prompts that contain quotes or backslashes).
+
+## CLI
+
+```text
+waker plan        prompt -> contract (0 token)
+waker lint        contract validation (0 token)
+waker run         supervise in the foreground
+waker start       supervise in the background (detached)
+waker stop        stop a run (tree kill)
+waker serve       loopback HTTP control plane
+waker status      markdown/JSON snapshot
+waker watch       live Rich TUI
+waker dashboard   static HTML or live web dashboard
+waker report      print the acceptance report
+waker doctor      environment + adapter tier + injector test
+waker install-skill  opencode / claude / gemini / generic
 ```
 
-Design details: [`plan.md`](plan.md).
+## Demo
+
+A 45-second recording script lives in [`docs/demo-45s.md`](docs/demo-45s.md).
+
+## Design
+
+Full design and decision log: [`plan.md`](plan.md).
+Phase reports: `.waker/runs/phase1_report.md`, `phase2_report.md`, `phase3_report.md`.
+
+## Status
+
+v0.3.0 — Phase 3 complete. Launch (v1.0) pending:
+PyPI publish, signed release, GitHub Actions matrix, and the 45s video.
+
+## License
+
+MIT

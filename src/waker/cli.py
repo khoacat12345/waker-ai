@@ -12,9 +12,13 @@ import sys
 from pathlib import Path
 
 from . import __version__, planner
+from . import doctor as doctor_module
+from .adapters.claude import ClaudeAdapter
 from .adapters.generic import GenericProcessAdapter
 from .adapters.opencode import OpenCodeAdapter
+from .adapters.pty import PtyAdapter
 from .daemon import serve, start_detached, stop_run
+from .dashboard import serve_dashboard, write_static
 from .engine import Engine, EngineConfig
 from .models import Task
 from .skill_install import PROVIDERS, install_skill
@@ -55,7 +59,15 @@ def _lint_or_fail(args, tasks: list[Task], constraints: list[Task]) -> int | Non
 
 def _build_adapter(args):
     if args.adapter == "opencode":
-        return OpenCodeAdapter(model=args.model)
+        return OpenCodeAdapter(model=args.model, binary=args.binary or "opencode")
+    if args.adapter == "claude":
+        return ClaudeAdapter(
+            binary=args.binary or "claude", permission_mode=args.permission_mode
+        )
+    if args.adapter == "pty":
+        if not args.agent:
+            raise SystemExit("--agent bắt buộc khi dùng --adapter pty")
+        return PtyAdapter(args.agent)
     if not args.agent:
         raise SystemExit("--agent bắt buộc khi dùng --adapter generic")
     return GenericProcessAdapter(args.agent)
@@ -105,6 +117,7 @@ def cmd_run(args) -> int:
         max_cost_usd=args.max_cost,
         freeze_probe=not args.no_freeze_probe,
         use_job=not args.no_job,
+        full_suite_every=args.full_suite_every,
         run_id=args.run_id,
     )
     result = Engine(config, _build_adapter(args)).run()
@@ -132,6 +145,11 @@ def _run_flags(args) -> list[str]:
     flags.extend(["--verify-timeout", str(args.verify_timeout)])
     flags.extend(["--freeze-after", str(args.freeze_after)])
     flags.extend(["--max-wall-clock", str(args.max_wall_clock)])
+    flags.extend(["--full-suite-every", str(args.full_suite_every)])
+    if args.permission_mode:
+        flags.extend(["--permission-mode", args.permission_mode])
+    if args.binary:
+        flags.extend(["--binary", args.binary])
     if args.max_cost:
         flags.extend(["--max-cost", str(args.max_cost)])
     if args.no_freeze_probe:
@@ -207,6 +225,25 @@ def cmd_watch(args) -> int:
     return 0
 
 
+def cmd_doctor(args) -> int:
+    return doctor_module.report(as_json=args.json, inject_test=args.inject_test)
+
+
+def cmd_dashboard(args) -> int:
+    if args.out:
+        target = write_static(args.repo, args.out, args.run)
+        print(f"dashboard: {target}")
+        return 0
+    serve_dashboard(
+        args.repo,
+        run_id=args.run,
+        host=args.host,
+        port=args.port,
+        open_browser=args.open_browser,
+    )
+    return 0
+
+
 def cmd_report(args) -> int:
     if args.run:
         paths = RunPaths(args.repo, args.run)
@@ -227,12 +264,15 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--tasks")
     parser.add_argument("--prompt")
     parser.add_argument("--test", default=None)
-    parser.add_argument("--agent", default=None, help="lệnh agent cho adapter generic")
-    parser.add_argument("--adapter", choices=["generic", "opencode"], default="generic")
+    parser.add_argument("--agent", default=None, help="lệnh agent cho adapter generic/pty")
+    parser.add_argument("--adapter", choices=["generic", "opencode", "claude", "pty"], default="generic")
     parser.add_argument("--model", default=None, help="provider/model cho OpenCode")
+    parser.add_argument("--binary", default=None, help="đường dẫn CLI (opencode/claude)")
+    parser.add_argument("--permission-mode", default="acceptEdits", help="Claude Code permission mode")
     parser.add_argument("--repo", default=".")
     parser.add_argument("--max-kicks", type=int, default=5)
     parser.add_argument("--max-cost", type=float, default=0.0, help="USD; 0 = tắt cost guard")
+    parser.add_argument("--full-suite-every", type=int, default=0, help="chạy full suite mỗi N kick")
     parser.add_argument("--turn-timeout", type=float, default=900.0)
     parser.add_argument("--verify-timeout", type=float, default=300.0)
     parser.add_argument("--freeze-after", type=float, default=300.0)
@@ -300,6 +340,20 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--repo", default=".")
     report.add_argument("--run")
     report.set_defaults(func=cmd_report)
+
+    doctor = sub.add_parser("doctor", help="kiểm tra môi trường và adapter tier")
+    doctor.add_argument("--json", action="store_true")
+    doctor.add_argument("--inject-test", action="store_true", help="tự test bơm phím qua PTY")
+    doctor.set_defaults(func=cmd_doctor)
+
+    dash = sub.add_parser("dashboard", help="dashboard HTML (static hoặc live)")
+    dash.add_argument("--repo", default=".")
+    dash.add_argument("--run")
+    dash.add_argument("--out", default=None, help="ghi file HTML tĩnh")
+    dash.add_argument("--host", default="127.0.0.1")
+    dash.add_argument("--port", type=int, default=47822)
+    dash.add_argument("--open", dest="open_browser", action="store_true")
+    dash.set_defaults(func=cmd_dashboard)
 
     skill = sub.add_parser("install-skill", help="cài skill cho chatbox CLI")
     skill.add_argument("--for", dest="provider", choices=list(PROVIDERS), required=True)

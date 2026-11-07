@@ -137,6 +137,7 @@ class RunState:
     started_at: str
     tasks: list[dict[str, Any]]
     session_id: str
+    agent_session_id: str | None = None
     max_kicks: int = 5
     kicks: int = 0
     turn_timeout: float = 900.0

@@ -21,6 +21,7 @@ class TurnContext:
     kick: int
     timeout: float
     prompt_file: str = ""
+    resume_id: str | None = None
     freeze_after: float = 0.0
     use_freeze_probe: bool = True
     use_job: bool = True

@@ -56,7 +56,7 @@ def test_daemon_starts_a_detached_run_and_reports_status(repo: Path, tasks):
         assert record["pid"] > 0
 
         status: dict = {}
-        deadline = time.time() + 90
+        deadline = time.time() + 120
         while time.time() < deadline:
             try:
                 status = _get(

@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import detector, evidence, injector
+from . import detector, evidence, injector, scheduler
 from .adapters.base import Adapter, TurnContext
 from .adapters.generic import GenericProcessAdapter
 from .models import (
@@ -70,6 +70,7 @@ class EngineConfig:
     max_cost_usd: float = 0.0
     freeze_probe: bool = True
     use_job: bool = True
+    full_suite_every: int = 0
     run_id: str | None = None
 
 
@@ -86,6 +87,8 @@ class Engine:
         self._baseline_test: dict = {}
         self._verify_results: dict = {}
         self._constraint_results: dict = {}
+        self._verify_cache: dict = {}
+        self._test_skipped: bool = False
 
     # ------------------------------------------------------------------ prepare
 
@@ -136,6 +139,12 @@ class Engine:
             max_cost_usd=cfg.max_cost_usd,
         )
         state.save(paths.state)
+        cache_path = paths.root / "verify_cache.json"
+        if cache_path.exists():
+            try:
+                self._verify_cache = read_json(cache_path)
+            except (ValueError, OSError):
+                self._verify_cache = {}
         write_json_atomic(paths.ledger, new_ledger(all_tasks))
         events.append(
             "prepare",
@@ -191,6 +200,7 @@ class Engine:
                     kick=kick,
                     timeout=state.turn_timeout,
                     prompt_file=str(prompt_path),
+                    resume_id=state.agent_session_id,
                     freeze_after=state.freeze_after if self.config.freeze_probe else 0.0,
                     use_freeze_probe=self.config.freeze_probe,
                     use_job=self.config.use_job,
@@ -204,6 +214,11 @@ class Engine:
                 )
                 turn = self.adapter.run_turn(prompt, ctx)
                 state.cost_usd += max(0.0, turn.cost_usd)
+                if turn.session_id and turn.session_id != state.agent_session_id:
+                    state.agent_session_id = turn.session_id
+                    self.events.append(
+                        "session_discovered", kick=kick, session_id=turn.session_id
+                    )
                 self.events.append(
                     "turn_end",
                     kick=kick,
@@ -290,19 +305,81 @@ class Engine:
         constraints = [t for t in cfg.constraints if t.kind != "work"]
 
         hits = evidence.scope_hits(work, files)
-        verifications = evidence.verify_tasks(work, self.repo, timeout=cfg.verify_timeout)
-        constraint_results = evidence.verify_tasks(
-            constraints, self.repo, timeout=cfg.verify_timeout
-        )
-        self._verify_results = verifications
-        self._constraint_results = constraint_results
+        verifications: dict[str, evidence.RequirementResult] = {}
+        candidate_done = True
 
-        if cfg.test_command:
+        for task in work:
+            scoped = scheduler.scope_files(task, files)
+            if not scoped:
+                verifications[task.id] = evidence.RequirementResult(task.id, None)
+                candidate_done = False
+                continue
+            digest = scheduler.scope_digest(self.repo, scoped)
+            cached = scheduler.cached_result(self._verify_cache, task.id, digest)
+            if cached is not None:
+                verifications[task.id] = evidence.RequirementResult(
+                    task.id, cached, output="(cached)"
+                )
+            else:
+                outcome = (
+                    evidence.run_command(task.command or "", self.repo, timeout=cfg.verify_timeout)
+                    if task.command
+                    else evidence.CommandResult(None)
+                )
+                verifications[task.id] = evidence.RequirementResult(
+                    task.id, outcome.exit_code, output=outcome.output
+                )
+                scheduler.remember(
+                    self._verify_cache, task.id, digest, outcome.exit_code, state.kicks
+                )
+            if verifications[task.id].exit_code != 0:
+                candidate_done = False
+
+        constraint_results: dict[str, evidence.RequirementResult] = {}
+        constraint_digest = scheduler.scope_digest(self.repo, files)
+        for constraint in constraints:
+            cached = scheduler.cached_result(
+                self._verify_cache, constraint.id, constraint_digest
+            )
+            if cached is not None:
+                constraint_results[constraint.id] = evidence.RequirementResult(
+                    constraint.id, cached, output="(cached)"
+                )
+            else:
+                outcome = (
+                    evidence.run_command(
+                        constraint.command or "", self.repo, timeout=cfg.verify_timeout
+                    )
+                    if constraint.command
+                    else evidence.CommandResult(None)
+                )
+                constraint_results[constraint.id] = evidence.RequirementResult(
+                    constraint.id, outcome.exit_code, output=outcome.output
+                )
+                scheduler.remember(
+                    self._verify_cache,
+                    constraint.id,
+                    constraint_digest,
+                    outcome.exit_code,
+                    state.kicks,
+                )
+
+        claimed = evidence.claimed_done(turn.output)
+        run_suite = bool(cfg.test_command) and scheduler.should_run_suite(
+            candidate_done, claimed, state.kicks, cfg.full_suite_every
+        )
+        if run_suite:
             test = evidence.run_command(
-                cfg.test_command, self.repo, timeout=cfg.verify_timeout
+                cfg.test_command or "", self.repo, timeout=cfg.verify_timeout
             )
         else:
             test = evidence.CommandResult(None)
+        self._test_skipped = bool(cfg.test_command) and not run_suite
+
+        self._verify_results = verifications
+        self._constraint_results = constraint_results
+        assert self.paths is not None
+        write_json_atomic(self.paths.root / "verify_cache.json", self._verify_cache)
 
         tamper = evidence.hash_globs(self.repo, state.test_globs) != state.baseline_test_hash
         integrity_ok = True
@@ -312,7 +389,7 @@ class Engine:
         gate_ok = evidence.all_tasks_done(
             work, hits, verifications, constraints, constraint_results
         )
-        test_ok = (not cfg.test_command) or test.exit_code == 0
+        test_ok = (not cfg.test_command) or (run_suite and test.exit_code == 0)
         all_done = gate_ok and test_ok
 
         failed_outputs = [
@@ -347,7 +424,7 @@ class Engine:
             has_test=bool(cfg.test_command),
             test_signature=signature,
             tamper=tamper,
-            claimed_done=evidence.claimed_done(turn.output),
+            claimed_done=claimed,
             blocked_reason=evidence.parse_blocked(turn.output),
             all_tasks_done=all_done,
             integrity_ok=integrity_ok,
@@ -414,6 +491,7 @@ class Engine:
             "exit_code": obs.test_exit,
             "failed": [failure.label() for failure in self._failures[:5]],
             "signature": obs.test_signature,
+            "skipped": getattr(self, "_test_skipped", False),
         }
         write_json_atomic(self.paths.ledger, ledger)
 
@@ -433,6 +511,7 @@ class Engine:
                 "in_scope": obs.in_scope_files,
                 "unscoped": obs.unscoped_changes,
                 "test_exit": obs.test_exit,
+                "test_skipped": getattr(self, "_test_skipped", False),
                 "tamper": obs.tamper,
                 "fingerprint": obs.fingerprint,
                 "streak": obs.same_fingerprint_streak,
@@ -474,6 +553,12 @@ class Engine:
         aborted: bool = False,
     ) -> RunResult:
         assert self.paths is not None and self.events is not None
+        closer = getattr(self.adapter, "close", None)
+        if callable(closer):
+            try:
+                closer()
+            except Exception:  # noqa: BLE001 - closing must never break the report
+                pass
         state.status = "aborted" if aborted else diag.value
         state.diagnosis = diag.value
         state.ended_ts = time.time()

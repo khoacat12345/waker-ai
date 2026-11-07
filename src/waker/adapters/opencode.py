@@ -41,11 +41,12 @@ class OpenCodeAdapter:
         self._last_total_tokens = 0
 
     def build_argv(self, prompt: str, ctx: TurnContext) -> list[str]:
+        session = ctx.resume_id or ctx.session_id
         argv = [
             self.binary,
             "run",
             "--session",
-            ctx.session_id,
+            session,
             "--auto",
             "--format",
             "json",
