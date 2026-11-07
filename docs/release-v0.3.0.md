@@ -51,13 +51,12 @@ per-kick git checkpoints, so a bad wake is always revertible.
 
 ## Install
 
-```bash
-pip install waker-ai
-# optional Windows PTY tier-3
-pip install "waker-ai[pty]"
-```
-
-Or from the attached wheel:
+> **PyPI is not published yet.** Until v1.0, install the wheel attached to the
+> release:
+>
+> ```bash
+> pip install https://github.com/khoacat12345/waker-ai/releases/download/v0.3.0/waker_ai-0.3.0-py3-none-any.whl
+> ```
 
 ```bash
 pip install waker_ai-0.3.0-py3-none-any.whl

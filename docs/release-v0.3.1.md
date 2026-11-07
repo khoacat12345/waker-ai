@@ -44,17 +44,20 @@ environment (and pip explicitly discourages install-time side effects).
   found it falls back to existing config directories, so wrappers still work.
 - Documented the restart requirement and the security boundary in the README.
 
-## Install / upgrade
+## Install
+
+PyPI publish is pending for v1.0. Until then, use the attached wheel or install
+from source:
 
 ```bash
-pip install --upgrade waker-ai
+pip install https://github.com/khoacat12345/waker-ai/releases/download/v0.3.1/waker_ai-0.3.1-py3-none-any.whl
 waker setup
 ```
 
-Or install the attached wheel:
+From source:
 
 ```bash
-pip install waker_ai-0.3.1-py3-none-any.whl
+pip install "waker-ai @ git+https://github.com/khoacat12345/waker-ai.git"
 waker setup
 ```
 

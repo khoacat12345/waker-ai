@@ -52,13 +52,17 @@ trusts `git diff` and exit codes.
 ## Install
 
 ```bash
-pip install waker-ai
+# PyPI publish is pending for v1.0 - install the release wheel:
+pip install https://github.com/khoacat12345/waker-ai/releases/download/v0.3.1/waker_ai-0.3.1-py3-none-any.whl
+
+# or from source:
+# pip install "waker-ai @ git+https://github.com/khoacat12345/waker-ai.git"
 
 # one command: detect installed CLIs and install the waker skill
 waker setup
 
 # Windows PTY tier-3 (optional)
-pip install "waker-ai[pty]"
+pip install "pywinpty>=3.0" "pyte>=0.8"
 ```
 
 From source:
