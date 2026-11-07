@@ -1,5 +1,7 @@
 # waker-ai
 
+[![tests](https://github.com/khoacat12345/waker-ai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/khoacat12345/waker-ai/actions/workflows/ci.yml)
+
 **Never let your AI coding agent sleep on the job again.**
 
 `waker` is an independent supervisor for AI coding agents. It watches the disk

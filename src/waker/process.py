@@ -119,6 +119,7 @@ def run_live(
         errors="replace",
         bufsize=1,
         creationflags=_popen_flags(),
+        start_new_session=(os.name != "nt"),
         env=env,
     )
     if job is not None and job.ok:
