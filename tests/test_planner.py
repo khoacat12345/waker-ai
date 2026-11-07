@@ -122,3 +122,13 @@ def test_yaml_roundtrip(tmp_path: Path):
     assert loaded[0].id == "T1"
     assert loaded[0].verify == "pytest tests/auth -q"
     assert loaded[0].scope == ["src/auth/**"]
+
+
+def test_load_tasks_accepts_utf8_bom(tmp_path: Path):
+    path = tmp_path / "tasks.yaml"
+    path.write_bytes(
+        b"\xef\xbb\xbftasks:\n  - id: T1\n    desc: x\n    scope: [\"src/**\"]\n    verify: pytest -q\n"
+    )
+    tasks = planner.load_tasks(path)
+    assert tasks[0].id == "T1"
+    assert tasks[0].desc == "x"

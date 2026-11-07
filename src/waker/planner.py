@@ -348,7 +348,7 @@ def render_yaml(bundle: PlanBundle) -> str:
 
 def load_tasks(path: str | Path) -> list[Task]:
     """Load tasks from YAML. Accepts a list or a ``tasks:`` mapping."""
-    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or []
+    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8-sig")) or []
     if isinstance(raw, dict):
         items = raw.get("tasks") or raw.get("constraints") or []
     else:

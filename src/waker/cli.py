@@ -16,7 +16,7 @@ from .ui import build_rich, load_latest, render_markdown, watch as watch_run
 
 def _parse_bundle(args) -> planner.PlanBundle:
     if args.file:
-        text = Path(args.file).read_text(encoding="utf-8")
+        text = Path(args.file).read_text(encoding="utf-8-sig")
     elif args.prompt:
         text = args.prompt
     else:
