@@ -1,0 +1,19 @@
+# runtime / build
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+.coverage
+htmlcov/
+
+# waker runtime artifacts (report is kept)
+.waker/*
+!.waker/runs/
+.waker/runs/*
+!.waker/runs/phase1_report.md
+
+# local agent scratch
+.fake_state.json
