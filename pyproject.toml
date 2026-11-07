@@ -24,4 +24,5 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+pythonpath = ["src"]
 filterwarnings = ["ignore::DeprecationWarning"]

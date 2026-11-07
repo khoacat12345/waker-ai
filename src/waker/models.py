@@ -212,6 +212,7 @@ class Observation:
     lines_changed: int = 0
     in_scope_files: dict[str, list[str]] = field(default_factory=dict)
     test_exit: int | None = None
+    has_test: bool = False
     test_signature: str = ""
     tamper: bool = False
     claimed_done: bool = False
@@ -221,10 +222,14 @@ class Observation:
     suspect_test: bool = False
     fingerprint: str = ""
     prev_fingerprint: str | None = None
+    same_fingerprint_streak: int = 0
     kicks: int = 0
     max_kicks: int = 5
     elapsed_total: float = 0.0
     max_wall_clock: float = 5400.0
+    alive_threshold: float = 120.0
+    freeze_after: float = 300.0
+    stall_after: float = 240.0
     unanswered_questions: int = 0
     unscoped_changes: list[str] = field(default_factory=list)
 
