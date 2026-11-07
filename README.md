@@ -54,6 +54,9 @@ trusts `git diff` and exit codes.
 ```bash
 pip install waker-ai
 
+# one command: detect installed CLIs and install the waker skill
+waker setup
+
 # Windows PTY tier-3 (optional)
 pip install "waker-ai[pty]"
 ```
@@ -100,11 +103,17 @@ waker stop --repo .
 Install the chatbox skill:
 
 ```bash
-waker install-skill --for opencode   # .opencode/skills/waker/SKILL.md
-waker install-skill --for claude     # .claude/skills/waker/SKILL.md
-waker install-skill --for gemini     # .gemini/config/skills/waker/SKILL.md
-waker install-skill --for generic    # AGENTS.md block (idempotent)
+waker setup                          # detects OpenCode/Claude/Gemini, installs globally
+# or explicit:
+waker install-skill --for opencode --global   # ~/.opencode/skills/waker/SKILL.md
+waker install-skill --for claude --global     # ~/.claude/skills/waker/SKILL.md
+waker install-skill --for gemini --global     # ~/.gemini/config/skills/waker/SKILL.md
+waker install-skill --for generic             # AGENTS.md block (idempotent)
 ```
+
+Skills are loaded when the chat session starts — restart your CLI after
+installing. A `pip install` cannot write into your agent's config by itself
+(that is a security boundary); `waker setup` is the one-time post-install step.
 
 ## How done is decided
 
@@ -168,6 +177,7 @@ waker watch       live Rich TUI
 waker dashboard   static HTML or live web dashboard
 waker report      print the acceptance report
 waker doctor      environment + adapter tier + injector test
+waker setup       detect CLIs and install the skill (one command)
 waker install-skill  opencode / claude / gemini / generic
 ```
 

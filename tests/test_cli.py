@@ -97,6 +97,26 @@ def test_cli_install_skill(tmp_path: Path, capsys):
     capsys.readouterr()
 
 
+def test_cli_setup_explicit_provider(tmp_path: Path, capsys):
+    code = main(["setup", "--for", "opencode", "--dir", str(tmp_path), "--local"])
+    assert code == 0
+    assert (tmp_path / ".opencode" / "skills" / "waker" / "SKILL.md").exists()
+    capsys.readouterr()
+
+
+def test_cli_setup_auto_detects(tmp_path: Path, monkeypatch, capsys):
+    from waker.doctor import ToolReport
+
+    monkeypatch.setattr(
+        "waker.doctor.detect_tools",
+        lambda: [ToolReport("opencode", True, "x", "1.0", "T1", "test")],
+    )
+    code = main(["setup", "--dir", str(tmp_path), "--local"])
+    assert code == 0
+    assert (tmp_path / ".opencode" / "skills" / "waker" / "SKILL.md").exists()
+    capsys.readouterr()
+
+
 
 def test_cli_doctor_json(capsys):
     code = main(["doctor", "--json"])

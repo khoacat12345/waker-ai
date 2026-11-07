@@ -190,6 +190,52 @@ def cmd_install_skill(args) -> int:
     return 0
 
 
+def _providers_from(tools, home: Path) -> list[str]:
+    found = {tool.name: tool.found for tool in tools}
+    providers = [name for name in ("opencode", "claude", "gemini") if found.get(name)]
+    if providers:
+        return providers
+    # No CLI on PATH: fall back to existing config dirs (e.g. a wrapper install).
+    return [
+        name
+        for name, folder in (
+            ("opencode", ".opencode"),
+            ("claude", ".claude"),
+            ("gemini", ".gemini"),
+        )
+        if (home / folder).exists()
+    ]
+
+
+def cmd_setup(args) -> int:
+    from .doctor import detect_tools
+
+    providers = list(args.providers or [])
+    if not providers:
+        providers = _providers_from(detect_tools(), Path.home())
+    if not providers:
+        print(
+            "Không dò thấy CLI nào. Dùng --for opencode|claude|gemini|generic.",
+            file=sys.stderr,
+        )
+        return 1
+
+    installed = []
+    for provider in dict.fromkeys(providers):
+        if args.dry_run:
+            print(f"[dry-run] sẽ cài skill cho {provider}")
+            continue
+        target = install_skill(provider, args.dir, global_=not args.local)
+        print(f"{provider}: {target}")
+        installed.append(target)
+
+    if installed:
+        print(
+            "\nXong. Khởi động lại phiên chat/OpenCode để skill `waker` được nạp."
+        )
+    return 0
+
+
 def cmd_status(args) -> int:
     if args.run:
         paths = RunPaths(args.repo, args.run)
@@ -360,6 +406,13 @@ def build_parser() -> argparse.ArgumentParser:
     skill.add_argument("--dir", default=".")
     skill.add_argument("--global", dest="global_", action="store_true")
     skill.set_defaults(func=cmd_install_skill)
+
+    setup = sub.add_parser("setup", help="dò CLI đã cài và cài skill (một lệnh)")
+    setup.add_argument("--for", dest="providers", action="append", choices=list(PROVIDERS))
+    setup.add_argument("--dir", default=".")
+    setup.add_argument("--local", action="store_true", help="cài vào repo hiện tại thay vì home")
+    setup.add_argument("--dry-run", action="store_true")
+    setup.set_defaults(func=cmd_setup)
 
     return parser
 
