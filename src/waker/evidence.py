@@ -21,6 +21,18 @@ from . import globs
 from .models import Failure, Task
 
 RUNTIME_PREFIXES = (".waker/", ".git/")
+NOISE_PARTS = {
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".git",
+    ".waker",
+    ".venv",
+    "venv",
+    "node_modules",
+}
+NOISE_SUFFIXES = (".pyc", ".pyo")
 DONE_PATTERNS = re.compile(
     r"(?:all\s+(?:tasks?\s+)?(?:done|completed)"
     r"|everything\s+(?:is\s+)?done"
@@ -106,6 +118,14 @@ def _git(repo: str | Path, *args: str) -> str:
     return result.stdout or ""
 
 
+def is_noise(path: str) -> bool:
+    """Caches and VCS/runtime dirs are not evidence and must not trigger TAMPER."""
+    normalized = globs.normalize(path)
+    if any(part in NOISE_PARTS for part in normalized.split("/")):
+        return True
+    return normalized.lower().endswith(NOISE_SUFFIXES)
+
+
 def list_files(repo: str | Path) -> list[str]:
     root = Path(repo)
     tracked = _git(root, "ls-files").splitlines()
@@ -113,7 +133,7 @@ def list_files(repo: str | Path) -> list[str]:
     files = [
         globs.normalize(path)
         for path in [*tracked, *untracked]
-        if path.strip() and (root / path.strip()).is_file()
+        if path.strip() and (root / path.strip()).is_file() and not is_noise(path)
     ]
     return sorted(set(files))
 
@@ -127,7 +147,7 @@ def changed_files(repo: str | Path, baseline: str) -> list[str]:
     names = [
         globs.normalize(path)
         for path in [*diff, *staged, *untracked]
-        if path.strip()
+        if path.strip() and not is_noise(path)
     ]
     return sorted(set(names))
 
@@ -249,7 +269,9 @@ def unscoped_files(tasks: list[Task], files: list[str]) -> list[str]:
     return [
         f
         for f in files
-        if not f.startswith(RUNTIME_PREFIXES) and not globs.matches_any(f, patterns)
+        if not f.startswith(RUNTIME_PREFIXES)
+        and not is_noise(f)
+        and not globs.matches_any(f, patterns)
     ]
 
 

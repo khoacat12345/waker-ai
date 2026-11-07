@@ -37,6 +37,10 @@ def diagnose(obs: Observation) -> Diagnosis:
     if obs.all_tasks_done and test_ok and obs.integrity_ok:
         return Diagnosis.DONE
 
+    # 5b. Cost guard: never let a retry loop burn the budget.
+    if obs.max_cost_usd > 0 and obs.cost_usd >= obs.max_cost_usd:
+        return Diagnosis.BREAKER
+
     # 6. Every failure looks like a broken test, not broken code.
     if obs.suspect_test:
         return Diagnosis.SUSPECT_TEST

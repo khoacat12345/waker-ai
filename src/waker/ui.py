@@ -72,7 +72,8 @@ def render_markdown(state: RunState, ledger: dict[str, Any]) -> str:
     lines = [
         f"**waker \u00b7 run {state.run_id} \u00b7 {done}/{total} \u2014 {percent}%**",
         f"`{progress_bar(done, total)}`  \u23f1 {fmt_duration(state.elapsed)}  "
-        f"\U0001F501 {state.kicks}/{state.max_kicks}  \U0001F9EA {test_label}",
+        f"\U0001F501 {state.kicks}/{state.max_kicks}  \U0001F9EA {test_label}"
+        + (f"  \U0001F4B0 ${state.cost_usd:.4f}" if state.cost_usd else ""),
         "",
         "|   | Task | Việc | Bằng chứng | Cổng |",
         "|---|------|------|-----------|------|",

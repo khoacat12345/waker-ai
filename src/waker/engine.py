@@ -67,6 +67,9 @@ class EngineConfig:
     freeze_after: float = 300.0
     alive_threshold: float = 120.0
     max_wall_clock: float = 5400.0
+    max_cost_usd: float = 0.0
+    freeze_probe: bool = True
+    use_job: bool = True
     run_id: str | None = None
 
 
@@ -130,6 +133,7 @@ class Engine:
             alive_threshold=cfg.alive_threshold,
             max_wall_clock=cfg.max_wall_clock,
             contract_hash=contract_hash,
+            max_cost_usd=cfg.max_cost_usd,
         )
         state.save(paths.state)
         write_json_atomic(paths.ledger, new_ledger(all_tasks))
@@ -187,8 +191,10 @@ class Engine:
                     kick=kick,
                     timeout=state.turn_timeout,
                     prompt_file=str(prompt_path),
+                    freeze_after=state.freeze_after if self.config.freeze_probe else 0.0,
+                    use_freeze_probe=self.config.freeze_probe,
+                    use_job=self.config.use_job,
                 )
-
                 self.events.append(
                     "turn_start",
                     kick=kick,
@@ -197,12 +203,17 @@ class Engine:
                     prompt_sha=sha256_bytes(prompt.encode("utf-8")),
                 )
                 turn = self.adapter.run_turn(prompt, ctx)
+                state.cost_usd += max(0.0, turn.cost_usd)
                 self.events.append(
                     "turn_end",
                     kick=kick,
                     exit_code=turn.exit_code,
                     duration=round(turn.duration, 2),
                     timed_out=turn.timed_out,
+                    frozen=turn.frozen,
+                    cost_usd=round(turn.cost_usd, 6),
+                    tokens=turn.tokens,
+                    events=turn.events,
                 )
 
                 obs = self._observe(turn)
@@ -323,10 +334,10 @@ class Engine:
 
         self._failures = failures
         return Observation(
-            turn_state="running" if turn.timed_out else "exited",
+            turn_state="running" if (turn.timed_out or turn.frozen) else "exited",
             exit_code=turn.exit_code,
             elapsed=turn.duration,
-            last_event_age=turn.duration if turn.timed_out else 0.0,
+            last_event_age=turn.duration if (turn.timed_out or turn.frozen) else 0.0,
             diff_hash=diff_hash,
             prev_diff_hash=state.last_diff_hash,
             changed_files=files,
@@ -348,6 +359,8 @@ class Engine:
             max_kicks=state.max_kicks,
             elapsed_total=state.elapsed,
             max_wall_clock=state.max_wall_clock,
+            cost_usd=state.cost_usd,
+            max_cost_usd=state.max_cost_usd,
             alive_threshold=state.alive_threshold,
             freeze_after=state.freeze_after,
             unscoped_changes=evidence.unscoped_files(work + constraints, files),
@@ -404,6 +417,9 @@ class Engine:
         }
         write_json_atomic(self.paths.ledger, ledger)
 
+        (self.paths.kick_dir(kick) / "stdout.log").write_text(
+            turn.output, encoding="utf-8", errors="replace"
+        )
         write_json_atomic(
             self.paths.kick_result(kick),
             {
@@ -422,6 +438,11 @@ class Engine:
                 "streak": obs.same_fingerprint_streak,
                 "claimed_done": obs.claimed_done,
                 "blocked": obs.blocked_reason,
+                "frozen": turn.frozen,
+                "cost_usd": round(turn.cost_usd, 6),
+                "tokens": turn.tokens,
+                "events": turn.events,
+                "total_cost_usd": round(self.state.cost_usd, 6),
             },
         )
         self.events.append(
@@ -502,6 +523,10 @@ class Engine:
             notes.append("Hai lần đánh thức liên tiếp không có tiến bộ nào. Đổi cách làm.")
         if diag is Diagnosis.FALSE_DONE:
             notes.append("Bạn báo xong nhưng gate vẫn đỏ. Chỉ báo xong khi test xanh thật.")
+        if diag is Diagnosis.BREAKER and obs.max_cost_usd > 0 and obs.cost_usd >= obs.max_cost_usd:
+            notes.append(
+                f"Đã chạm hạn mức chi phí (${obs.cost_usd:.4f} / ${obs.max_cost_usd:.4f}). Dừng."
+            )
         if obs.unscoped_changes:
             notes.append(
                 "Thay đổi ngoài hợp đồng: " + ", ".join(obs.unscoped_changes[:5])

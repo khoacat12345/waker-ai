@@ -196,6 +196,11 @@ class TurnResult:
     output: str = ""
     duration: float = 0.0
     timed_out: bool = False
+    frozen: bool = False
+    session_id: str | None = None
+    cost_usd: float = 0.0
+    tokens: int = 0
+    events: int = 0
 
 
 @dataclass
@@ -227,6 +232,8 @@ class Observation:
     max_kicks: int = 5
     elapsed_total: float = 0.0
     max_wall_clock: float = 5400.0
+    cost_usd: float = 0.0
+    max_cost_usd: float = 0.0
     alive_threshold: float = 120.0
     freeze_after: float = 300.0
     stall_after: float = 240.0

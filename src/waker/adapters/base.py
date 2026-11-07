@@ -2,7 +2,7 @@
 
 Tier 1 = native session resume (OpenCode, Claude Code).
 Tier 2 = fresh process + context digest (generic).
-Tier 3 = PTY keystroke injection (not implemented in Phase 1).
+Tier 3 = PTY keystroke injection (Phase 3).
 """
 
 from __future__ import annotations
@@ -21,6 +21,9 @@ class TurnContext:
     kick: int
     timeout: float
     prompt_file: str = ""
+    freeze_after: float = 0.0
+    use_freeze_probe: bool = True
+    use_job: bool = True
 
 
 class Adapter(Protocol):

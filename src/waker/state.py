@@ -150,6 +150,8 @@ class RunState:
     fingerprint_streak: int = 0
     last_diff_hash: str | None = None
     contract_hash: str = ""
+    cost_usd: float = 0.0
+    max_cost_usd: float = 0.0
     started_ts: float = field(default_factory=time.time)
     ended_ts: float | None = None
 

@@ -6,7 +6,8 @@ The command may contain:
 * ``{prompt}``      - the prompt, shell-quoted
 * ``{session}``     - the run session id
 
-With no placeholder the prompt is passed on stdin and in ``WAKER_PROMPT``.
+With no placeholder the prompt is passed in ``WAKER_PROMPT`` and on stdin is
+intentionally **not** used (TUI agents ignore stdin).
 """
 
 from __future__ import annotations
@@ -14,9 +15,9 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
-import time
 
 from ..models import TurnResult
+from ..process import run_live
 from .base import TurnContext
 
 
@@ -50,30 +51,20 @@ class GenericProcessAdapter:
         env["WAKER_RUN_ID"] = ctx.run_id
         env["WAKER_KICK"] = str(ctx.kick)
         env.setdefault("PYTHONIOENCODING", "utf-8")
-        started = time.time()
-        try:
-            proc = subprocess.run(
-                command,
-                cwd=ctx.repo,
-                shell=True,
-                input=prompt,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=ctx.timeout,
-                env=env,
-                check=False,
-            )
-            output = (proc.stdout or "") + (proc.stderr or "")
-            return TurnResult(proc.returncode, output, time.time() - started)
-        except subprocess.TimeoutExpired as exc:
-            stdout = exc.stdout or ""
-            stderr = exc.stderr or ""
-            if isinstance(stdout, bytes):
-                stdout = stdout.decode("utf-8", "replace")
-            if isinstance(stderr, bytes):
-                stderr = stderr.decode("utf-8", "replace")
-            return TurnResult(
-                None, stdout + stderr, time.time() - started, timed_out=True
-            )
+
+        freeze = ctx.freeze_after if ctx.use_freeze_probe else 0.0
+        result = run_live(
+            command,
+            cwd=ctx.repo,
+            timeout=ctx.timeout,
+            freeze_after=freeze,
+            env=env,
+            use_job=ctx.use_job,
+        )
+        return TurnResult(
+            exit_code=result.exit_code,
+            output=result.output,
+            duration=result.duration,
+            timed_out=result.timed_out,
+            frozen=result.frozen,
+        )

@@ -88,5 +88,17 @@ def test_breaker_when_kicks_exhausted():
     assert diagnose(obs(kicks=5, max_kicks=5)) is Diagnosis.BREAKER
 
 
+def test_cost_guard_is_a_breaker():
+    assert diagnose(obs(cost_usd=1.0, max_cost_usd=0.5)) is Diagnosis.BREAKER
+    assert diagnose(obs(cost_usd=0.4, max_cost_usd=0.5)) is Diagnosis.PARTIAL
+
+
+def test_done_wins_over_cost_guard():
+    assert (
+        diagnose(obs(all_tasks_done=True, test_exit=0, cost_usd=1.0, max_cost_usd=0.5))
+        is Diagnosis.DONE
+    )
+
+
 def test_partial_is_the_fallback():
     assert diagnose(obs(same_fingerprint_streak=0)) is Diagnosis.PARTIAL

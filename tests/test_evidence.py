@@ -39,6 +39,14 @@ def test_hash_globs_detects_tamper_and_restore(repo: Path):
     assert evidence.hash_globs(repo, ["tests/**"]) == before
 
 
+def test_hash_globs_ignores_pycache(repo: Path):
+    before = evidence.hash_globs(repo, ["tests/**"])
+    (repo / "tests" / "__pycache__").mkdir(exist_ok=True)
+    (repo / "tests" / "__pycache__" / "x.pyc").write_bytes(b"\x00")
+    assert evidence.hash_globs(repo, ["tests/**"]) == before
+    assert "tests/__pycache__/x.pyc" not in evidence.changed_files(repo, git_head(repo))
+
+
 def test_parse_failures_from_pytest_output():
     output = (
         "FAILED tests/test_x.py::test_a - AssertionError: nope\n"

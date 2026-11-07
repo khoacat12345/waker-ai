@@ -86,3 +86,12 @@ def test_cli_survives_legacy_console_encoding(repo: Path, tasks: list[Task]):
     )
     assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")
     assert b"waker" in proc.stdout
+
+
+def test_cli_install_skill(tmp_path: Path, capsys):
+    code = main(["install-skill", "--for", "opencode", "--dir", str(tmp_path)])
+    assert code == 0
+    target = tmp_path / ".opencode" / "skills" / "waker" / "SKILL.md"
+    assert target.exists()
+    assert "waker" in target.read_text(encoding="utf-8").lower()
+    capsys.readouterr()
