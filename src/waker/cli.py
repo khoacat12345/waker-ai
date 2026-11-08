@@ -82,6 +82,14 @@ def _build_adapter(args):
 
 def cmd_plan(args) -> int:
     bundle = _parse_bundle(args)
+    if getattr(args, "via", "rules") == "rules":
+        work = [task for task in bundle.tasks if task.kind == "work"]
+        if len(work) >= 6 and not any(task.scope for task in work):
+            print(
+                "\n# Gợi ý: prompt này có vẻ là văn xuôi/lệnh thực thi, không phải "
+                "task list. Dùng `--via opencode` để model điền scope/verify.",
+                file=sys.stderr,
+            )
     out = Path(args.out)
     planner.write_tasks(out, bundle)
     if args.json:

@@ -223,3 +223,31 @@ def test_cli_resume_after_breaker(repo: Path, capsys):
     second = main(["run", "--resume", run_id, "--repo", str(repo)])
     assert second == 0
     assert (repo / "src" / "b.txt").exists()
+
+
+
+def test_cli_plan_warns_on_prose_prompt(tmp_path: Path, repo: Path, capsys):
+    prompt = "\n".join(
+        [
+            "Dòng một phê duyệt",
+            "Dòng hai phê duyệt",
+            "Dòng ba phê duyệt",
+            "Dòng bốn phê duyệt",
+            "Dòng năm phê duyệt",
+            "Dòng sáu phê duyệt",
+        ]
+    )
+    main(
+        [
+            "plan",
+            "--prompt",
+            prompt,
+            "--out",
+            str(tmp_path / "tasks.yaml"),
+            "--repo",
+            str(repo),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert "Gợi ý" in captured.err
+    assert "--via opencode" in captured.err

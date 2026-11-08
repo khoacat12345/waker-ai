@@ -5,6 +5,7 @@ from pathlib import Path
 from waker.state import (
     RunState,
     checkpoint,
+    ensure_runtime_excluded,
     git_head,
     latest_run,
     new_ledger,
@@ -68,3 +69,18 @@ def test_ledger_status_transitions():
     assert ledger["tasks"]["T1"]["since_kick"] == 0
     set_task(ledger, "T1", "failed", None, 1)
     assert ledger["tasks"]["T1"]["since_kick"] == 1
+
+
+
+def test_worktree_runtime_is_excluded(tmp_path: Path):
+    from conftest import git, init_repo
+
+    repo = init_repo(tmp_path / "repo")
+    worktree = tmp_path / "wt"
+    result = git(repo, "worktree", "add", "-b", "wt", str(worktree))
+    assert result.returncode == 0, result.stderr
+    ensure_runtime_excluded(worktree)
+    (worktree / ".waker").mkdir()
+    (worktree / ".waker" / "x").write_text("x", encoding="utf-8")
+    status = git(worktree, "status", "--porcelain").stdout
+    assert ".waker" not in status

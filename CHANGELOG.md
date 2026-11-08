@@ -2,6 +2,25 @@
 
 All notable changes to `waker-ai`.
 
+## v1.0.1 — 2026-11-08
+
+### Fixed
+
+- **Skill UX**: never asks "OK để chạy?" when lint has errors. It now shows the
+  errors and offers `--via opencode` or a manual merge.
+- **Skill repo guard**: asks for the target repo when prompt paths do not exist
+  in the current repo (e.g. `.agents/...` while inside `waker-ai`).
+- **Skill prompt hygiene**: strips the `@waker` prefix; warns that execution
+  orders are not task lists.
+- **Git worktrees**: `ensure_runtime_excluded` now uses
+  `git rev-parse --git-common-dir`, so `.waker/` is excluded even when `.git`
+  is a file (worktree). Previously a worktree run could commit runtime logs.
+
+### Added
+
+- `waker plan` prints a hint when a prose prompt yields >= 6 tasks with no
+  scope, suggesting `--via opencode`.
+
 ## v1.0.0 — 2026-11-08
 
 ### Added

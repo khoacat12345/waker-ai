@@ -79,11 +79,23 @@ def git_dirty(repo: str | Path) -> bool:
 
 
 def ensure_runtime_excluded(repo: str | Path) -> None:
-    """Keep ``.waker/`` out of commits without touching the user's .gitignore."""
-    git_dir = Path(repo) / ".git"
-    if not git_dir.is_dir():
+    """Keep ``.waker/`` out of commits without touching the user's .gitignore.
+
+    Uses the common git dir so this also works inside ``git worktree`` (where
+    ``.git`` is a file, not a directory).
+    """
+    common = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "--git-common-dir"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    if not common:
         return
-    exclude = git_dir / "info" / "exclude"
+    common_dir = Path(common)
+    if not common_dir.is_absolute():
+        common_dir = (Path(repo) / common_dir).resolve()
+    exclude = common_dir / "info" / "exclude"
     exclude.parent.mkdir(parents=True, exist_ok=True)
     try:
         text = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
