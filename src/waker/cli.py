@@ -32,6 +32,7 @@ from .state import (
     run_lock_pid,
 )
 from .ui import load_latest, render_markdown, watch as watch_run
+from .vault import Vault
 
 
 def _parse_bundle(args) -> planner.PlanBundle:
@@ -364,6 +365,92 @@ def cmd_detect(args) -> int:
     return 0 if results else 1
 
 
+def cmd_vault_init(args) -> int:
+    vault = Vault.create(args.repo, vault_id=args.id, base_dir=args.vault_dir)
+    payload = {
+        "vault_id": vault.vault_id,
+        "path": str(vault.path),
+        "repo": vault.manifest["repo"],
+        "created_at": vault.manifest["created_at"],
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"vault_id : {vault.vault_id}")
+        print(f"path     : {vault.path}")
+        print(f"repo     : {vault.manifest['repo']}")
+    return 0
+
+
+def cmd_vault_add(args) -> int:
+    vault = Vault.load(args.vault, base_dir=args.vault_dir)
+    entry = vault.add_suite(
+        args.suite,
+        args.files,
+        task=args.task,
+        baseline=args.baseline,
+        timeout=args.timeout,
+        leak=args.leak,
+    )
+    payload = {
+        "vault_id": vault.vault_id,
+        "suite": args.suite,
+        "files": [item["name"] for item in entry["files"]],
+        "hash": entry["hash"],
+        "baseline": entry["baseline"],
+        "leak": entry["leak"],
+        "validated": False,
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"suite    : {args.suite}")
+        print(f"files    : {len(entry['files'])}")
+        print(f"hash     : {entry['hash']}")
+        print(f"baseline : {entry['baseline']}")
+        print("validated: false (chạy `waker vault validate` trước khi start)")
+    return 0
+
+
+def cmd_vault_list(args) -> int:
+    vault = Vault.load(args.vault, base_dir=args.vault_dir)
+    rows = vault.summary()
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "vault_id": vault.vault_id,
+                    "path": str(vault.path),
+                    "repo": vault.manifest.get("repo"),
+                    "suites": rows,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    if not rows:
+        print("(vault rỗng)")
+        return 0
+    print(f"{'suite':<16} {'task':<8} {'files':<6} {'hash':<18} {'validated':<10} leak")
+    for row in rows:
+        print(
+            f"{row['suite']:<16} {str(row['task'] or '-'):<8} {row['files']:<6} "
+            f"{row['hash']:<18} {str(row['validated']):<10} {row['leak']}"
+        )
+    return 0
+
+
+def cmd_vault_rm(args) -> int:
+    if not args.yes:
+        print("dùng --yes để xoá suite khỏi vault", file=sys.stderr)
+        return 2
+    vault = Vault.load(args.vault, base_dir=args.vault_dir)
+    removed = vault.remove_suite(args.suite)
+    print(f"đã xoá suite {args.suite}" if removed else f"không có suite {args.suite}")
+    return 0 if removed else 1
+
+
 def cmd_report(args) -> int:
     if args.run:
         paths = RunPaths(args.repo, args.run)
@@ -470,6 +557,41 @@ def build_parser() -> argparse.ArgumentParser:
     detect_parser.add_argument("--json", action="store_true")
     detect_parser.set_defaults(func=cmd_detect)
 
+    vault_parser = sub.add_parser("vault", help="Hidden test vault (blind evaluation)")
+    vault_sub = vault_parser.add_subparsers(dest="vault_command", required=True)
+
+    v_init = vault_sub.add_parser("init", help="tạo vault ngoài repo")
+    v_init.add_argument("--repo", default=".")
+    v_init.add_argument("--id", default=None)
+    v_init.add_argument("--vault-dir", default=None)
+    v_init.add_argument("--json", action="store_true")
+    v_init.set_defaults(func=cmd_vault_init)
+
+    v_add = vault_sub.add_parser("add", help="thêm file test vào suite")
+    v_add.add_argument("--vault", required=True)
+    v_add.add_argument("--suite", required=True)
+    v_add.add_argument("--task", default=None)
+    v_add.add_argument("--baseline", choices=["red", "green"], default="red")
+    v_add.add_argument("--timeout", type=int, default=120)
+    v_add.add_argument("--leak", choices=["minimal", "message"], default="message")
+    v_add.add_argument("--vault-dir", default=None)
+    v_add.add_argument("--json", action="store_true")
+    v_add.add_argument("files", nargs="+")
+    v_add.set_defaults(func=cmd_vault_add)
+
+    v_list = vault_sub.add_parser("list", help="liệt kê suite trong vault")
+    v_list.add_argument("--vault", required=True)
+    v_list.add_argument("--vault-dir", default=None)
+    v_list.add_argument("--json", action="store_true")
+    v_list.set_defaults(func=cmd_vault_list)
+
+    v_rm = vault_sub.add_parser("rm", help="xoá suite khỏi vault")
+    v_rm.add_argument("--vault", required=True)
+    v_rm.add_argument("--suite", required=True)
+    v_rm.add_argument("--yes", action="store_true")
+    v_rm.add_argument("--vault-dir", default=None)
+    v_rm.set_defaults(func=cmd_vault_rm)
+
     doctor = sub.add_parser("doctor", help="kiểm tra môi trường và adapter tier")
     doctor.add_argument("--json", action="store_true")
     doctor.add_argument("--inject-test", action="store_true", help="tự test bơm phím qua PTY")
@@ -513,6 +635,9 @@ def main(argv: list[str] | None = None) -> int:
         return int(args.func(args))
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
+        return 1
+    except (ValueError, FileExistsError) as exc:
+        print(f"lỗi: {exc}", file=sys.stderr)
         return 1
     except RuntimeError as exc:
         print(f"lỗi: {exc}", file=sys.stderr)
