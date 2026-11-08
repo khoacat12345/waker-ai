@@ -434,6 +434,29 @@ def lint_tasks(tasks: list[Task], repo: str | Path | None = None) -> list[LintIs
                     LintIssue("error", task.id, "constraint thiếu `check` hoặc `verify`")
                 )
 
+        if task.blind:
+            if not isinstance(task.blind, dict):
+                issues.append(LintIssue("error", task.id, "`blind` phải là mapping"))
+            else:
+                if not task.blind.get("suite"):
+                    issues.append(LintIssue("error", task.id, "`blind.suite` bị thiếu"))
+                if task.blind.get("baseline", "red") not in ("red", "green"):
+                    issues.append(
+                        LintIssue("error", task.id, "`blind.baseline` phải là red|green")
+                    )
+                if task.blind.get("leak", "message") not in ("minimal", "message"):
+                    issues.append(
+                        LintIssue("error", task.id, "`blind.leak` phải là minimal|message")
+                    )
+                if not task.verify:
+                    issues.append(
+                        LintIssue(
+                            "error",
+                            task.id,
+                            "task blind cần `verify` public smoke",
+                        )
+                    )
+
         command = (task.command or "").strip()
         if command:
             if command.lower() in TRIVIAL_VERIFY or command.lower().startswith("echo "):

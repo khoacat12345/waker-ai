@@ -88,11 +88,18 @@ def parse_failures(output: str) -> list[str]:
 
 def looks_suspect(output: str, failures: list[str]) -> bool:
     lowered = output.lower()
-    if any(token in lowered for token in ("error collecting", "errors during collection")):
+    if "error collecting" in lowered or "errors during collection" in lowered:
         return True
+    summary = "\n".join(
+        line
+        for line in output.splitlines()
+        if line.startswith(("FAILED ", "ERROR "))
+    ).lower()
+    if summary:
+        return any(token in summary for token in SUSPECT_TOKENS)
     if not failures:
-        return False
-    text = " ".join(failures).lower() + " " + lowered
+        return any(token in lowered for token in SUSPECT_TOKENS)
+    text = " ".join(failures).lower()
     return any(token in text for token in SUSPECT_TOKENS)
 
 

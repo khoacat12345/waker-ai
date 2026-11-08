@@ -81,10 +81,16 @@ def render_markdown(state: RunState, ledger: dict[str, Any]) -> str:
         f"`{progress_bar(done, total)}`  \u23f1 {fmt_duration(state.elapsed)}  "
         f"\U0001F501 {state.kicks}/{state.max_kicks}  \U0001F9EA {test_label}"
         + (f"  \U0001F4B0 ${state.cost_usd:.4f}" if state.cost_usd else ""),
-        "",
-        "|   | Task | Việc | Bằng chứng | Cổng |",
-        "|---|------|------|-----------|------|",
     ]
+    hidden = ledger.get("hidden") or {}
+    if hidden:
+        summary = "  ".join(
+            f"{name}: {record.get('passed', 0)}/{record.get('total', 0)}"
+            for name, record in hidden.items()
+        )
+        lines.append(f"hidden: {summary}")
+    lines.extend(["", "|   | Task | Việc | Bằng chứng | Cổng |",
+                  "|---|------|------|-----------|------|"])
     for icon, task_id, desc, evidence, gate in _task_rows(state, ledger):
         lines.append(f"| {icon} | {task_id} | {desc} | {evidence} | {gate} |")
 
@@ -138,6 +144,13 @@ def build_rich(state: RunState, ledger: dict[str, Any]):
     )
     body = Table.grid(padding=(0, 1))
     body.add_row(header)
+    hidden = ledger.get("hidden") or {}
+    if hidden:
+        summary = "  ".join(
+            f"{name}: {record.get('passed', 0)}/{record.get('total', 0)}"
+            for name, record in hidden.items()
+        )
+        body.add_row(Text(f"hidden: {summary}", style="cyan"))
     body.add_row(table)
     if state.diagnosis:
         body.add_row(Text(f"chẩn đoán: {state.diagnosis}", style="yellow"))

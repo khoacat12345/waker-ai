@@ -158,6 +158,9 @@ class RunState:
     permission_mode: str = "acceptEdits"
     binary: str | None = None
     contract_path: str | None = None
+    vault_id: str | None = None
+    vault_hash: str | None = None
+    vault_dir: str | None = None
     generation: int = 0
     elapsed_offset: float = 0.0
     max_kicks: int = 5

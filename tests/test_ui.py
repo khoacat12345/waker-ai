@@ -73,3 +73,14 @@ def test_progress_ignores_constraints():
     assert "1/2" in text
     assert "125%" not in text
     assert "2/2" not in text
+
+
+def test_markdown_shows_hidden_counts():
+    ledger = {
+        "tasks": {"T1": {"status": "done", "evidence": {"files": ["src/a.py"], "gate": "pass"}}},
+        "test": {"exit_code": 0},
+        "hidden": {"auth": {"total": 2, "passed": 1, "failed": 1, "failures": []}},
+    }
+    text = render_markdown(make_state(done=1), ledger)
+    assert "hidden: auth: 1/2" in text
+    assert "hidden://" not in text

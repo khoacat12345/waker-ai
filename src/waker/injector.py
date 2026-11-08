@@ -27,6 +27,11 @@ def build_initial_prompt(
     lines = ["[waker] Bắt đầu run. Hợp đồng công việc:"]
     for task in tasks:
         lines.append(_task_line(task))
+        if task.public_api:
+            lines.append("  public API:")
+            lines.extend(f"  - {item}" for item in task.public_api)
+        if task.blind:
+            lines.append("  hidden tests: có (không hiển thị; phải pass 100%)")
     if constraints:
         lines.append("")
         lines.append("RÀNG BUỘC (không được vi phạm):")
@@ -57,6 +62,8 @@ def build_wake_prompt(
     kick: int,
     max_kicks: int,
     notes: list[str] | None = None,
+    hidden_failures: list[str] | None = None,
+    hidden_summary: list[str] | None = None,
 ) -> str:
     done = set(done_ids(ledger))
     missing = [task for task in tasks if task.id not in done]
@@ -82,6 +89,15 @@ def build_wake_prompt(
         lines.append("Nhắc lại ràng buộc:")
         for constraint in constraints:
             lines.append(f"- {constraint.desc}")
+
+    if hidden_summary:
+        lines.append("")
+        lines.append("Hidden suite:")
+        lines.extend(f"- {item}" for item in hidden_summary)
+    if hidden_failures:
+        lines.append("")
+        lines.append("Hidden failures (đã lọc, không có source):")
+        lines.extend(f"- {item}" for item in hidden_failures[:5])
 
     if notes:
         lines.append("")

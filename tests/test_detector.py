@@ -102,3 +102,28 @@ def test_done_wins_over_cost_guard():
 
 def test_partial_is_the_fallback():
     assert diagnose(obs(same_fingerprint_streak=0)) is Diagnosis.PARTIAL
+
+
+def test_vault_tamper_outranks_done():
+    assert (
+        diagnose(obs(vault_tamper=True, all_tasks_done=True, test_exit=0))
+        is Diagnosis.VAULT_TAMPER
+    )
+
+
+def test_hidden_fail_blocks_done():
+    assert (
+        diagnose(obs(all_tasks_done=True, test_exit=0, hidden_ok=False, hidden_failed=1))
+        is Diagnosis.HIDDEN_FAIL
+    )
+
+
+def test_hidden_suspect_is_suspect_test():
+    assert diagnose(obs(hidden_suspect=True)) is Diagnosis.SUSPECT_TEST
+
+
+def test_done_requires_hidden_ok():
+    assert (
+        diagnose(obs(all_tasks_done=True, test_exit=0, hidden_ok=False))
+        is not Diagnosis.DONE
+    )

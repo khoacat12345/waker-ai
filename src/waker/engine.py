@@ -11,6 +11,9 @@ from pathlib import Path
 from . import detector, evidence, injector, scheduler
 from .adapters.base import Adapter, TurnContext
 from .adapters.generic import GenericProcessAdapter
+from .blind_runner import grade_vault, summarize
+from .vault import Vault
+from .vault_validate import validate_vault
 from .models import (
     EXIT_CODES,
     TERMINAL,
@@ -97,6 +100,8 @@ class EngineConfig:
     model: str | None = None
     permission_mode: str = "acceptEdits"
     binary: str | None = None
+    vault_id: str | None = None
+    vault_dir: str | None = None
     run_id: str | None = None
 
 
@@ -115,6 +120,12 @@ class Engine:
         self._constraint_results: dict = {}
         self._verify_cache: dict = {}
         self._test_skipped: bool = False
+        self._vault: Vault | None = None
+        self._blind_suites: list[str] = []
+        self._hidden_results: dict = {}
+        self._hidden_summary: list[str] = []
+        self._hidden_failures: list[str] = []
+        self._vault_hash: str | None = None
 
     # ------------------------------------------------------------------ prepare
 
@@ -131,6 +142,7 @@ class Engine:
             checkpoint(self.repo, "waker: baseline")
         baseline_commit = git_head(self.repo)
         baseline_hash = evidence.hash_globs(self.repo, cfg.test_globs)
+        self._setup_vault(validate_missing=True)
 
         all_tasks = [*cfg.tasks, *cfg.constraints]
         contract_hash = (
@@ -165,6 +177,9 @@ class Engine:
             contract_path=str(Path(cfg.contract_path).resolve())
             if cfg.contract_path
             else None,
+            vault_id=cfg.vault_id,
+            vault_hash=self._vault_hash,
+            vault_dir=cfg.vault_dir,
             max_kicks=cfg.max_kicks,
             turn_timeout=cfg.turn_timeout,
             freeze_after=cfg.freeze_after,
@@ -255,12 +270,15 @@ class Engine:
             model=state.model,
             permission_mode=state.permission_mode,
             binary=state.binary,
+            vault_id=state.vault_id,
+            vault_dir=state.vault_dir,
             run_id=run_id,
         )
         engine = cls(cfg, adapter or build_adapter_from_state(state))
         engine.state = state
         engine.paths = paths
         engine.events = EventLog(paths.events)
+        engine._setup_vault(validate_missing=False)
         cache_path = paths.root / "verify_cache.json"
         if cache_path.exists():
             try:
@@ -308,6 +326,43 @@ class Engine:
         return engine
 
     # ---------------------------------------------------------------------- run
+
+    def _setup_vault(self, validate_missing: bool) -> None:
+        cfg = self.config
+        blind_tasks = [task for task in cfg.tasks if task.blind]
+        if not cfg.vault_id:
+            if blind_tasks:
+                raise RuntimeError(
+                    "task có `blind` nhưng thiếu `--vault <id>` (fail closed)"
+                )
+            return
+
+        vault = Vault.load(cfg.vault_id, base_dir=cfg.vault_dir)
+        manifest_repo = vault.manifest.get("repo")
+        if manifest_repo and Path(manifest_repo).resolve() != self.repo:
+            raise RuntimeError(
+                f"vault {vault.vault_id} thuộc {manifest_repo}, không phải {self.repo}"
+            )
+
+        suites: list[str] = []
+        for task in blind_tasks:
+            suite = str((task.blind or {}).get("suite") or task.id)
+            if suite not in vault.suites:
+                raise RuntimeError(f"suite `{suite}` không có trong vault")
+            entry = vault.suites[suite]
+            if not entry.get("validated_at"):
+                if not validate_missing:
+                    raise RuntimeError(f"suite `{suite}` chưa được validate")
+                results = validate_vault(vault, self.repo, suite=suite, runs=2)
+                if not results[0].ok:
+                    raise RuntimeError(
+                        f"suite `{suite}` không hợp lệ: {results[0].messages}"
+                    )
+            suites.append(suite)
+
+        self._vault = vault
+        self._blind_suites = sorted(set(suites))
+        self._vault_hash = vault.vault_hash()
 
     def run(self) -> RunResult:
         state = self.state or self.prepare()
@@ -383,6 +438,9 @@ class Engine:
                     ),
                     total=len(self.config.tasks),
                     test_exit=obs.test_exit,
+                    hidden_passed=obs.hidden_passed,
+                    hidden_total=obs.hidden_total,
+                    hidden_failed=obs.hidden_failed,
                     fingerprint=obs.fingerprint,
                     streak=obs.same_fingerprint_streak,
                 )
@@ -411,6 +469,8 @@ class Engine:
                     state.kicks,
                     state.max_kicks,
                     notes=self._notes(diag, obs),
+                    hidden_failures=self._hidden_failures,
+                    hidden_summary=self._hidden_summary,
                 )
                 self.events.append(
                     "kick_requested",
@@ -521,7 +581,46 @@ class Engine:
             work, hits, verifications, constraints, constraint_results
         )
         test_ok = (not cfg.test_command) or (run_suite and test.exit_code == 0)
-        all_done = gate_ok and test_ok
+
+        vault_tamper = False
+        hidden_results: dict = {}
+        hidden_summary: list[str] = []
+        hidden_failures: list[str] = []
+        hidden_total = hidden_passed = hidden_failed = 0
+        hidden_ok = True
+        hidden_suspect = False
+        if self._vault is not None:
+            expected = state.vault_hash or self._vault_hash
+            vault_tamper = self._vault.vault_hash() != expected
+            if vault_tamper:
+                hidden_ok = False
+                hidden_failures = [
+                    "vault hash changed — hidden suite integrity lost"
+                ]
+            elif self._blind_suites:
+                hidden_results = grade_vault(
+                    self._vault, self.repo, self._blind_suites
+                )
+                summary = summarize(hidden_results)
+                hidden_total = summary["total"]
+                hidden_passed = summary["passed"]
+                hidden_failed = summary["failed"]
+                hidden_ok = summary["ok"]
+                hidden_suspect = summary["suspect"] or summary["timed_out"]
+                hidden_summary = [
+                    f"{name}: {result.passed}/{result.total}"
+                    for name, result in hidden_results.items()
+                ]
+                hidden_failures = [
+                    failure
+                    for result in hidden_results.values()
+                    for failure in result.failures
+                ]
+        self._hidden_results = hidden_results
+        self._hidden_summary = hidden_summary
+        self._hidden_failures = hidden_failures
+
+        all_done = gate_ok and test_ok and hidden_ok
 
         failed_outputs = [
             result.output
@@ -572,6 +671,14 @@ class Engine:
             alive_threshold=state.alive_threshold,
             freeze_after=state.freeze_after,
             unscoped_changes=evidence.unscoped_files(work + constraints, files),
+            hidden_total=hidden_total,
+            hidden_passed=hidden_passed,
+            hidden_failed=hidden_failed,
+            hidden_ok=hidden_ok,
+            hidden_suspect=hidden_suspect,
+            hidden_failures=hidden_failures,
+            hidden_summary=hidden_summary,
+            vault_tamper=vault_tamper,
         )
 
     # -------------------------------------------------------------------- record
@@ -598,10 +705,25 @@ class Engine:
                 status = "done"
             elif files:
                 status = "failed"
+            message = self._message_for(task.id)
+            gate = "pass" if gate_exit == 0 else "fail"
+
+            if task.blind:
+                suite = str((task.blind or {}).get("suite") or task.id)
+                hidden = self._hidden_results.get(suite)
+                if obs.vault_tamper:
+                    status = "failed"
+                    gate = "vault tamper"
+                    message = "vault hash changed"
+                elif hidden is not None and not hidden.ok:
+                    status = "failed"
+                    gate = "hidden fail"
+                    message = hidden.failures[0] if hidden.failures else "hidden tests failed"
+
             evidence_payload = {
                 "files": files[:10],
-                "gate": "pass" if gate_exit == 0 else "fail",
-                "message": self._message_for(task.id),
+                "gate": gate,
+                "message": message,
             }
             set_task(ledger, task.id, status, evidence_payload, kick)
 
@@ -624,6 +746,10 @@ class Engine:
             "signature": obs.test_signature,
             "skipped": getattr(self, "_test_skipped", False),
         }
+        ledger["hidden"] = {
+            name: result.to_dict() for name, result in self._hidden_results.items()
+        }
+        ledger["vault_tamper"] = obs.vault_tamper
         write_json_atomic(self.paths.ledger, ledger)
 
         (self.paths.kick_dir(kick, self.state.generation) / "stdout.log").write_text(
@@ -653,6 +779,11 @@ class Engine:
                 "tokens": turn.tokens,
                 "events": turn.events,
                 "total_cost_usd": round(self.state.cost_usd, 6),
+                "hidden": {
+                    name: result.to_dict()
+                    for name, result in self._hidden_results.items()
+                },
+                "vault_tamper": obs.vault_tamper,
             },
         )
         self.events.append(
@@ -738,6 +869,10 @@ class Engine:
             notes.append("Bạn vừa sửa file test. Waker đã khôi phục bản gốc. Không được sửa test.")
         if diag is Diagnosis.THRASH:
             notes.append("Hai lần đánh thức liên tiếp không có tiến bộ nào. Đổi cách làm.")
+        if diag is Diagnosis.HIDDEN_FAIL:
+            notes.append("Hidden tests đang đỏ. Sửa đúng hành vi, không đoán đề.")
+        if diag is Diagnosis.VAULT_TAMPER:
+            notes.append("Vault hash đã đổi. Dừng để bảo vệ đề thi.")
         if diag is Diagnosis.FALSE_DONE:
             notes.append("Bạn báo xong nhưng gate vẫn đỏ. Chỉ báo xong khi test xanh thật.")
         if diag is Diagnosis.BREAKER and obs.max_cost_usd > 0 and obs.cost_usd >= obs.max_cost_usd:

@@ -132,3 +132,35 @@ def test_load_tasks_accepts_utf8_bom(tmp_path: Path):
     tasks = planner.load_tasks(path)
     assert tasks[0].id == "T1"
     assert tasks[0].desc == "x"
+
+
+def test_blind_task_roundtrip(tmp_path: Path):
+    task = Task(
+        id="T1",
+        desc="auth",
+        scope=["src/auth/**"],
+        verify="pytest tests/auth -q",
+        public_api=["login(name, password) -> token"],
+        blind={"suite": "auth", "baseline": "red", "timeout": 60, "leak": "message"},
+    )
+    out = tmp_path / "tasks.yaml"
+    planner.write_tasks(out, planner.PlanBundle(tasks=[task]))
+    loaded = planner.load_tasks(out)[0]
+    assert loaded.blind["suite"] == "auth"
+    assert loaded.blind["baseline"] == "red"
+    assert loaded.public_api == ["login(name, password) -> token"]
+
+
+def test_lint_rejects_blind_without_verify():
+    issues = planner.lint_tasks(
+        [
+            Task(
+                id="T1",
+                desc="x",
+                scope=["src/**"],
+                blind={"suite": "auth"},
+            )
+        ]
+    )
+    assert planner.has_errors(issues)
+    assert any("public smoke" in issue.message for issue in issues)

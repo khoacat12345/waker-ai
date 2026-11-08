@@ -17,10 +17,12 @@ class Diagnosis(str, Enum):
     """
 
     ALIVE = "ALIVE"
+    VAULT_TAMPER = "VAULT_TAMPER"
     TAMPER = "TAMPER"
     BLOCKED = "BLOCKED"
     FROZEN = "FROZEN"
     DONE = "DONE"
+    HIDDEN_FAIL = "HIDDEN_FAIL"
     SUSPECT_TEST = "SUSPECT_TEST"
     FALSE_DONE = "FALSE_DONE"
     THRASH = "THRASH"
@@ -31,7 +33,7 @@ class Diagnosis(str, Enum):
 
 #: Diagnoses that stop the run immediately.
 TERMINAL: frozenset[Diagnosis] = frozenset(
-    {Diagnosis.DONE, Diagnosis.BLOCKED, Diagnosis.BREAKER, Diagnosis.SUSPECT_TEST}
+    {Diagnosis.DONE, Diagnosis.BLOCKED, Diagnosis.BREAKER, Diagnosis.SUSPECT_TEST, Diagnosis.VAULT_TAMPER}
 )
 
 #: Exit code per terminal diagnosis.
@@ -40,6 +42,7 @@ EXIT_CODES: dict[Diagnosis, int] = {
     Diagnosis.BREAKER: 2,
     Diagnosis.BLOCKED: 3,
     Diagnosis.SUSPECT_TEST: 4,
+    Diagnosis.VAULT_TAMPER: 5,
 }
 
 
@@ -63,6 +66,8 @@ class Task:
     depends_on: list[str] = field(default_factory=list)
     source: list[str] = field(default_factory=list)
     test_writer: bool = False
+    public_api: list[str] = field(default_factory=list)
+    blind: dict[str, Any] | None = None
 
     @property
     def command(self) -> str | None:
@@ -89,6 +94,10 @@ class Task:
             out["source"] = list(self.source)
         if self.test_writer:
             out["test_writer"] = True
+        if self.public_api:
+            out["public_api"] = list(self.public_api)
+        if self.blind:
+            out["blind"] = dict(self.blind)
         return out
 
     @classmethod
@@ -105,6 +114,8 @@ class Task:
             "depends_on",
             "source",
             "test_writer",
+            "public_api",
+            "blind",
         }
         clean = {k: v for k, v in data.items() if k in known}
         clean.setdefault("id", "T?")
@@ -239,6 +250,14 @@ class Observation:
     stall_after: float = 240.0
     unanswered_questions: int = 0
     unscoped_changes: list[str] = field(default_factory=list)
+    hidden_total: int = 0
+    hidden_passed: int = 0
+    hidden_failed: int = 0
+    hidden_ok: bool = True
+    hidden_suspect: bool = False
+    hidden_failures: list[str] = field(default_factory=list)
+    hidden_summary: list[str] = field(default_factory=list)
+    vault_tamper: bool = False
 
 
 @dataclass

@@ -262,3 +262,24 @@ def test_cli_start_accepts_detach_flag(capsys):
     )
     assert args.detach is True
     assert args.func is cmd_start
+
+
+def test_hidden_summary_in_wake_prompt():
+    from waker.injector import build_wake_prompt
+    from waker.models import Diagnosis
+
+    prompt = build_wake_prompt(
+        Diagnosis.HIDDEN_FAIL,
+        [Task(id="T1", desc="auth", scope=["src/auth/**"], verify="pytest -q")],
+        [],
+        {"tasks": {"T1": {"status": "failed"}}},
+        [],
+        None,
+        1,
+        5,
+        hidden_summary=["auth: 1/2"],
+        hidden_failures=["hidden://auth/test_1: AssertionError: boom"],
+    )
+    assert "Hidden suite" in prompt
+    assert "hidden://auth/test_1" in prompt
+    assert "def test_" not in prompt

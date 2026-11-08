@@ -141,6 +141,12 @@ def cmd_run(args) -> int:
     failed = _lint_or_fail(args, tasks, constraints)
     if failed is not None:
         return failed
+    if any(task.blind for task in tasks) and not args.vault:
+        print(
+            "task có `blind` nhưng thiếu `--vault <id>`; dừng (fail closed).",
+            file=sys.stderr,
+        )
+        return 2
     adapter_name = args.adapter or "generic"
     max_kicks = args.max_kicks if args.max_kicks is not None else 5
     config = EngineConfig(
@@ -164,6 +170,8 @@ def cmd_run(args) -> int:
         model=args.model,
         permission_mode=args.permission_mode or "acceptEdits",
         binary=args.binary,
+        vault_id=args.vault,
+        vault_dir=args.vault_dir,
         run_id=args.run_id,
     )
     result = Engine(config, _build_adapter(args)).run()
@@ -188,6 +196,8 @@ def _run_flags(args) -> list[str]:
         ("--model", args.model),
         ("--binary", args.binary),
         ("--permission-mode", args.permission_mode),
+        ("--vault", args.vault),
+        ("--vault-dir", args.vault_dir),
     ):
         if value not in (None, ""):
             flags.extend([flag, str(value)])
@@ -217,6 +227,12 @@ def cmd_start(args) -> int:
         failed = _lint_or_fail(args, tasks, constraints)
         if failed is not None:
             return failed
+        if any(task.blind for task in tasks) and not args.vault:
+            print(
+                "task có `blind` nhưng thiếu `--vault <id>`; dừng (fail closed).",
+                file=sys.stderr,
+            )
+            return 2
     run_id = args.resume or args.run_id or new_run_id()
     paths = RunPaths(args.repo, run_id)
     if run_is_active(paths):
@@ -500,6 +516,8 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model", default=None, help="provider/model cho OpenCode")
     parser.add_argument("--binary", default=None, help="đường dẫn CLI (opencode/claude)")
     parser.add_argument("--permission-mode", default=None, help="Claude Code permission mode")
+    parser.add_argument("--vault", default=None, help="hidden test vault id (blind)")
+    parser.add_argument("--vault-dir", default=None, help="vault base dir (test/CI)")
     parser.add_argument("--repo", default=".")
     parser.add_argument("--max-kicks", type=int, default=None)
     parser.add_argument("--max-cost", type=float, default=0.0, help="USD; 0 = tắt cost guard")

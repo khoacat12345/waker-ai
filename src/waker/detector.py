@@ -19,6 +19,8 @@ def diagnose(obs: Observation) -> Diagnosis:
 
     # 2. The exam was edited. This outranks DONE: a tampered test that passes
     #    looks exactly like success.
+    if obs.vault_tamper:
+        return Diagnosis.VAULT_TAMPER
     if obs.tamper:
         return Diagnosis.TAMPER
 
@@ -34,12 +36,18 @@ def diagnose(obs: Observation) -> Diagnosis:
 
     # 5. Real success: every task has evidence and the gate is green.
     test_ok = (not obs.has_test) or obs.test_exit == 0
-    if obs.all_tasks_done and test_ok and obs.integrity_ok:
+    if obs.all_tasks_done and test_ok and obs.integrity_ok and obs.hidden_ok:
         return Diagnosis.DONE
 
     # 5b. Cost guard: never let a retry loop burn the budget.
     if obs.max_cost_usd > 0 and obs.cost_usd >= obs.max_cost_usd:
         return Diagnosis.BREAKER
+
+    # 5c. Hidden tests failed, or the hidden suite itself is broken.
+    if obs.hidden_suspect:
+        return Diagnosis.SUSPECT_TEST
+    if obs.hidden_failed > 0:
+        return Diagnosis.HIDDEN_FAIL
 
     # 6. Every failure looks like a broken test, not broken code.
     if obs.suspect_test:
