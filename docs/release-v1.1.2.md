@@ -28,11 +28,19 @@ CI matrix: ubuntu-latest + windows-latest × Python 3.11 + 3.12
 ## Install
 
 ```bash
-pip install https://github.com/khoacat12345/waker-ai/releases/download/v1.1.2/waker_ai-1.1.2-py3-none-any.whl
+pip install waker-ai==1.1.2
 waker setup
 ```
 
+Or the attached wheel:
+
+```bash
+pip install waker_ai-1.1.2-py3-none-any.whl
+```
+
 ## Checksums
+
+> GitHub asset checksum. The PyPI wheel is built separately on CI and can differ byte-wise.
 
 ```
 SHA256  a5b1cd73ce1fa79dbb54677e897f1381c46fde381dbfbcc569d2eb32ec1d4547

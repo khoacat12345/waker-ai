@@ -1,6 +1,7 @@
 # waker-ai
 
 [![tests](https://github.com/khoacat12345/waker-ai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/khoacat12345/waker-ai/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/waker-ai.svg)](https://pypi.org/project/waker-ai/)
 
 ![waker demo](docs/demo.gif)
 
@@ -54,14 +55,13 @@ trusts `git diff` and exit codes.
 ## Install
 
 ```bash
-# PyPI upload workflow is ready; until the first release is published:
-pip install "waker-ai @ git+https://github.com/khoacat12345/waker-ai.git"
+pip install waker-ai
 
 # one command: detect installed CLIs and install the waker skill
 waker setup
 
 # Windows PTY tier-3 (optional)
-pip install "pywinpty>=3.0" "pyte>=0.8"
+pip install "waker-ai[pty]"
 ```
 
 From source:
@@ -246,7 +246,7 @@ Phase reports: `.waker/runs/phase1_report.md`, `phase2_report.md`, `phase3_repor
 
 ## Status
 
-**v1.1.0** — blind evaluation (hidden vault + sanitized grading), engine,
+**v1.1.2** - blind evaluation (hidden vault + sanitized grading), engine,
 3 adapter tiers, daemon/skills, CI matrix, dashboard and release automation.
 
 Maturity:
@@ -257,8 +257,7 @@ Maturity:
 - **PTY T3** — Windows only; POSIX support is planned for v1.1.
 - **Cost guard** — exact for OpenCode, best-effort for Claude, 0 for generic/PTY.
 
-PyPI: the `publish.yml` workflow is ready (trusted publishing or
-`PYPI_API_TOKEN`); publish the v1.0.0 release to trigger the first upload.
+PyPI: **published** — `pip install waker-ai` (v1.1.2).
 
 ## License
 
