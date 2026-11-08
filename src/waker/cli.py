@@ -33,6 +33,7 @@ from .state import (
 )
 from .ui import load_latest, render_markdown, watch as watch_run
 from .vault import Vault
+from .vault_validate import validate_vault
 
 
 def _parse_bundle(args) -> planner.PlanBundle:
@@ -451,6 +452,28 @@ def cmd_vault_rm(args) -> int:
     return 0 if removed else 1
 
 
+def cmd_vault_validate(args) -> int:
+    vault = Vault.load(args.vault, base_dir=args.vault_dir)
+    results = validate_vault(vault, args.repo, suite=args.suite, runs=args.runs)
+    payload = {
+        "vault_id": vault.vault_id,
+        "ok": all(result.ok for result in results),
+        "results": [result.to_dict() for result in results],
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        for result in results:
+            status = "OK" if result.ok else "FAIL"
+            print(
+                f"{status:<4} {result.suite:<16} tests={result.tests:<3} "
+                f"baseline={result.baseline} flaky={result.flaky}"
+            )
+            for message in result.messages:
+                print(f"     - {message}")
+    return 0 if payload["ok"] else 1
+
+
 def cmd_report(args) -> int:
     if args.run:
         paths = RunPaths(args.repo, args.run)
@@ -591,6 +614,15 @@ def build_parser() -> argparse.ArgumentParser:
     v_rm.add_argument("--yes", action="store_true")
     v_rm.add_argument("--vault-dir", default=None)
     v_rm.set_defaults(func=cmd_vault_rm)
+
+    v_val = vault_sub.add_parser("validate", help="thẩm định đề trên baseline")
+    v_val.add_argument("--vault", required=True)
+    v_val.add_argument("--repo", default=".")
+    v_val.add_argument("--suite", default=None)
+    v_val.add_argument("--runs", type=int, default=2)
+    v_val.add_argument("--vault-dir", default=None)
+    v_val.add_argument("--json", action="store_true")
+    v_val.set_defaults(func=cmd_vault_validate)
 
     doctor = sub.add_parser("doctor", help="kiểm tra môi trường và adapter tier")
     doctor.add_argument("--json", action="store_true")
