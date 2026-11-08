@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 from waker import doctor, evidence, opencode_events, planner, process, state, winproc
 from waker.daemon import start_detached
 
@@ -20,6 +22,7 @@ def test_no_window_flag_value():
         assert winproc.NO_WINDOW == 0
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows creation flags")
 def test_wrapper_run_and_popen_add_flag(monkeypatch):
     calls: list[dict] = []
 
@@ -45,6 +48,7 @@ def test_wrapper_run_and_popen_add_flag(monkeypatch):
     assert popen_calls[0]["creationflags"] & 0x200
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows creation flags")
 def test_patched_call_sites_pass_no_window(monkeypatch):
     calls: list[dict] = []
 
@@ -65,6 +69,7 @@ def test_patched_call_sites_pass_no_window(monkeypatch):
     assert all(call["creationflags"] & winproc.NO_WINDOW for call in calls)
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows creation flags")
 def test_daemon_start_detached_hides_window(tmp_path: Path, monkeypatch):
     captured: list[dict] = []
 

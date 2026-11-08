@@ -2,6 +2,19 @@
 
 All notable changes to `waker-ai`.
 
+## v1.1.2 — 2026-11-08
+
+### Fixed
+
+- Linux CI: the Windows-only `CREATE_NO_WINDOW` assertions in
+  `tests/test_winproc.py` are now skipped on non-Windows. The static test that
+  forbids direct `subprocess.run`/`Popen` calls still runs everywhere.
+- No product change; v1.1.0/v1.1.1 code is unchanged.
+
+### Tests
+
+- 186 passed, 1 skipped (Windows); Linux runs 2 + 3 skipped in that module.
+
 ## v1.1.1 — 2026-11-08
 
 ### Added / completed (Phase E–F of the blind evaluation spec)
