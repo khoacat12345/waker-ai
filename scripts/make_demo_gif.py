@@ -120,6 +120,24 @@ def frame_status(done: int, kick: int, test: str, rows: list[tuple[str, str, str
     return image
 
 
+def frame_blind() -> Image.Image:
+    image = Image.new("RGB", (W, H), BG)
+    draw = ImageDraw.Draw(image)
+    draw_window(draw, "waker · blind evaluation")
+    lines = [
+        (100, "$ waker vault validate --vault 9f3a...", TEXT),
+        (140, "OK   auth   tests=12   baseline=red   flaky=False", GREEN),
+        (210, "worker sees : public_api + public smoke tests", CYAN),
+        (250, "worker never: hidden suite / vault path / source", CYAN),
+        (320, "DONE requires public smoke + hidden 12/12", TEXT),
+        (370, "failure: hidden://auth/test_3: AssertionError: ...", YELLOW),
+        (410, "no source · no paths · no locals", MUTED),
+    ]
+    for y, text, color in lines:
+        draw.text((70, y), text, font=font(19), fill=color)
+    return image
+
+
 def frame_report() -> Image.Image:
     image = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(image)
@@ -163,9 +181,10 @@ def main() -> None:
             ("[x]", "T2  Payment webhook", "src/pay/api.py", "pass"),
             ("[x]", "T3  API docs", "docs/README.md", "pass"),
         ]),
+        frame_blind(),
         frame_report(),
     ]
-    durations = [1600, 1600, 1400, 1400, 1400, 2400, 2200]
+    durations = [1600, 1600, 1400, 1400, 1400, 2400, 2000, 2200]
     out = Path("docs/demo.gif")
     out.parent.mkdir(parents=True, exist_ok=True)
     frames[0].save(

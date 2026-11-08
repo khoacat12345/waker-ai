@@ -177,10 +177,25 @@ class Vault:
         return True
 
     def vault_hash(self) -> str:
+        """Hash of the frozen manifest (suite hashes), not the files on disk."""
         payload = {
             name: entry["hash"]
             for name, entry in sorted(self.suites.items())
         }
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+
+    def current_hash(self) -> str:
+        """Hash of the files as they exist on disk (detects vault tampering)."""
+        payload: dict[str, str] = {}
+        for suite, entry in sorted(self.suites.items()):
+            files = []
+            for item in entry.get("files", []):
+                path = self.suite_dir(suite) / item["name"]
+                digest = _sha256_file(path) if path.is_file() else "missing"
+                files.append({"name": item["name"], "sha256": digest})
+            payload[suite] = suite_hash(files)
         return hashlib.sha256(
             json.dumps(payload, sort_keys=True).encode("utf-8")
         ).hexdigest()

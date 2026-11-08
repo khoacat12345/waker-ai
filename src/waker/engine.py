@@ -362,7 +362,7 @@ class Engine:
 
         self._vault = vault
         self._blind_suites = sorted(set(suites))
-        self._vault_hash = vault.vault_hash()
+        self._vault_hash = vault.current_hash()
 
     def run(self) -> RunResult:
         state = self.state or self.prepare()
@@ -591,7 +591,7 @@ class Engine:
         hidden_suspect = False
         if self._vault is not None:
             expected = state.vault_hash or self._vault_hash
-            vault_tamper = self._vault.vault_hash() != expected
+            vault_tamper = self._vault.current_hash() != expected
             if vault_tamper:
                 hidden_ok = False
                 hidden_failures = [
