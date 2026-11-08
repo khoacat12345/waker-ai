@@ -6,6 +6,8 @@ chatbox skill and a terminal TUI always see the same truth.
 
 from __future__ import annotations
 
+from . import winproc
+
 import json
 import os
 import subprocess
@@ -67,7 +69,7 @@ def start_detached(repo: str | Path, run_args: list[str], run_id: str | None = N
 
     with log_path.open("ab") as log:
         kwargs["stdout"] = log
-        process = subprocess.Popen(argv, **kwargs)
+        process = winproc.popen(argv, **kwargs)
 
     pid_dir = root / ".waker" / "daemon"
     pid_dir.mkdir(parents=True, exist_ok=True)

@@ -6,6 +6,8 @@ crash never loses the truth. The UI is only ever a renderer of these files.
 
 from __future__ import annotations
 
+from . import winproc
+
 import hashlib
 import json
 import os
@@ -49,7 +51,7 @@ def file_sha256(path: str | Path) -> str:
 
 
 def is_git_repo(repo: str | Path) -> bool:
-    result = subprocess.run(
+    result = winproc.run(
         ["git", "-C", str(repo), "rev-parse", "--is-inside-work-tree"],
         capture_output=True,
         text=True,
@@ -59,7 +61,7 @@ def is_git_repo(repo: str | Path) -> bool:
 
 
 def git_head(repo: str | Path) -> str:
-    result = subprocess.run(
+    result = winproc.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
         capture_output=True,
         text=True,
@@ -69,7 +71,7 @@ def git_head(repo: str | Path) -> str:
 
 
 def git_dirty(repo: str | Path) -> bool:
-    result = subprocess.run(
+    result = winproc.run(
         ["git", "-C", str(repo), "status", "--porcelain"],
         capture_output=True,
         text=True,
@@ -84,7 +86,7 @@ def ensure_runtime_excluded(repo: str | Path) -> None:
     Uses the common git dir so this also works inside ``git worktree`` (where
     ``.git`` is a file, not a directory).
     """
-    common = subprocess.run(
+    common = winproc.run(
         ["git", "-C", str(repo), "rev-parse", "--git-common-dir"],
         capture_output=True,
         text=True,
@@ -109,13 +111,13 @@ def ensure_runtime_excluded(repo: str | Path) -> None:
 def checkpoint(repo: str | Path, message: str) -> str | None:
     """Commit the working tree. Returns the commit hash, or None if clean."""
     root = str(repo)
-    subprocess.run(["git", "-C", root, "add", "-A"], capture_output=True, check=False)
-    status = subprocess.run(
+    winproc.run(["git", "-C", root, "add", "-A"], capture_output=True, check=False)
+    status = winproc.run(
         ["git", "-C", root, "status", "--porcelain"], capture_output=True, text=True, check=False
     )
     if not status.stdout.strip():
         return None
-    subprocess.run(
+    winproc.run(
         [
             "git",
             "-C",

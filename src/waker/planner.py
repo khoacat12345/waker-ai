@@ -14,6 +14,8 @@ closed instead of grading against a meaningless contract.
 
 from __future__ import annotations
 
+from . import winproc
+
 import re
 from pathlib import Path
 from typing import Any
@@ -380,14 +382,14 @@ def _repo_files(repo: str | Path) -> list[str]:
 
     root = Path(repo)
     try:
-        tracked = subprocess.run(
+        tracked = winproc.run(
             ["git", "-C", str(root), "ls-files"],
             capture_output=True,
             text=True,
             timeout=20,
             check=False,
         ).stdout
-        untracked = subprocess.run(
+        untracked = winproc.run(
             ["git", "-C", str(root), "ls-files", "--others", "--exclude-standard"],
             capture_output=True,
             text=True,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from . import winproc
+
 import json
 import os
 import platform
@@ -46,7 +48,7 @@ class EnvReport:
 def _version(name: str, path: str) -> str:
     command = f'"{path}" --version' if " " in path else f"{path} --version"
     try:
-        result = subprocess.run(
+        result = winproc.run(
             command,
             shell=True,
             capture_output=True,

@@ -2,6 +2,23 @@
 
 All notable changes to `waker-ai`.
 
+## v1.0.3 — 2026-11-08
+
+### Fixed
+
+- **Windows console popups**: every `subprocess.run` / `Popen` now goes through
+  `waker.winproc`, which adds `CREATE_NO_WINDOW` on Windows. This covers git,
+  pytest, `taskkill`, OpenCode session export, doctor version probes, planner
+  file listing and the detached daemon—no more conhost flashes or focus steals.
+- A static test now fails if any module bypasses `waker.winproc` with a direct
+  `subprocess.run` / `subprocess.Popen` call.
+
+### Notes
+
+- This hides **waker's own** child processes. If an agent CLI itself creates
+  console windows when it runs shell tools, that is outside waker's process; use
+  the PTY adapter (tier 3) when a fully invisible session is required.
+
 ## v1.0.2 — 2026-11-08
 
 ### Fixed

@@ -9,6 +9,8 @@ No agent message is trusted here.
 
 from __future__ import annotations
 
+from . import winproc
+
 import hashlib
 import re
 import subprocess
@@ -83,7 +85,7 @@ class RequirementResult:
 def run_command(command: str, cwd: str | Path, timeout: float = 600.0) -> CommandResult:
     started = time.time()
     try:
-        proc = subprocess.run(
+        proc = winproc.run(
             command,
             cwd=str(cwd),
             shell=True,
@@ -107,7 +109,7 @@ def run_command(command: str, cwd: str | Path, timeout: float = 600.0) -> Comman
 
 
 def _git(repo: str | Path, *args: str) -> str:
-    result = subprocess.run(
+    result = winproc.run(
         ["git", "-C", str(repo), *args],
         capture_output=True,
         text=True,
@@ -300,13 +302,13 @@ def restore_globs(repo: str | Path, patterns: list[str], baseline: str) -> list[
     restored: list[str] = []
     candidates = [f for f in list_files(root) if globs.matches_any(f, patterns)]
     for name in candidates:
-        exists_in_baseline = subprocess.run(
+        exists_in_baseline = winproc.run(
             ["git", "-C", str(root), "cat-file", "-e", f"{baseline}:{name}"],
             capture_output=True,
             check=False,
         ).returncode == 0
         if exists_in_baseline:
-            subprocess.run(
+            winproc.run(
                 ["git", "-C", str(root), "checkout", baseline, "--", name],
                 capture_output=True,
                 check=False,

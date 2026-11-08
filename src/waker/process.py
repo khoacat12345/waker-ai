@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from . import winproc
+
 import os
 import signal
 import subprocess
@@ -68,7 +70,7 @@ def kill_tree(pid: int, job: WinJob | None = None) -> None:
     if job is not None:
         job.terminate()
     if os.name == "nt":
-        subprocess.run(
+        winproc.run(
             ["taskkill", "/T", "/F", "/PID", str(pid)],
             capture_output=True,
             check=False,
@@ -107,7 +109,7 @@ def run_live(
     job = WinJob() if (use_job and os.name == "nt") else None
     started = time.time()
 
-    proc = subprocess.Popen(
+    proc = winproc.popen(
         command,
         cwd=str(cwd),
         shell=isinstance(command, str),

@@ -12,6 +12,8 @@ So cost/token accounting reads the export before and after each turn.
 
 from __future__ import annotations
 
+from . import winproc
+
 import json
 import os
 import shutil
@@ -120,7 +122,7 @@ def read_session_usage(
 ) -> Usage:
     executable = resolve_opencode_binary(binary)
     try:
-        result = subprocess.run(
+        result = winproc.run(
             [executable, "session", "export", session_id],
             cwd=cwd,
             capture_output=True,
