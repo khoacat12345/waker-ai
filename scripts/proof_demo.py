@@ -92,28 +92,39 @@ def main() -> int:
     ):
         subprocess.run(command, capture_output=True, check=False)
 
-    banner("STEP 1 · create a 2-test hidden vault outside the repo")
+    banner("STEP 1 · create hidden vault outside the repo: suite a for T1, suite b for T2")
     vault_base = demo.parent / (demo.name + "-vaults")
     init = run(
         [WAKER, "vault", "init", "--repo", str(demo), "--vault-dir", str(vault_base), "--json"],
         demo,
     )
     vault_id = json.loads(init.stdout)["vault_id"]
-    hidden = demo.parent / "test_hidden.py"
-    hidden.write_text(
+    hidden_a = demo.parent / "test_hidden_a.py"
+    hidden_a.write_text(
         "import os\n"
         "from pathlib import Path\n\n"
-        "def _repo():\n"
-        "    return Path(os.environ['WAKER_REPO'])\n\n"
         "def test_a():\n"
-        "    assert (_repo() / 'src' / 'a.txt').read_text(encoding='utf-8') == 'a'\n\n"
+        "    repo = Path(os.environ['WAKER_REPO'])\n"
+        "    assert (repo / 'src' / 'a.txt').read_text(encoding='utf-8') == 'a'\n",
+        encoding="utf-8",
+    )
+    hidden_b = demo.parent / "test_hidden_b.py"
+    hidden_b.write_text(
+        "import os\n"
+        "from pathlib import Path\n\n"
         "def test_b():\n"
-        "    assert (_repo() / 'src' / 'b.txt').read_text(encoding='utf-8') == 'b'\n",
+        "    repo = Path(os.environ['WAKER_REPO'])\n"
+        "    assert (repo / 'src' / 'b.txt').read_text(encoding='utf-8') == 'b'\n",
         encoding="utf-8",
     )
     run(
-        [WAKER, "vault", "add", "--vault", vault_id, "--suite", "core",
-         "--task", "T1", str(hidden), "--vault-dir", str(vault_base), "--json"],
+        [WAKER, "vault", "add", "--vault", vault_id, "--suite", "a",
+         "--task", "T1", str(hidden_a), "--vault-dir", str(vault_base), "--json"],
+        demo,
+    )
+    run(
+        [WAKER, "vault", "add", "--vault", vault_id, "--suite", "b",
+         "--task", "T2", str(hidden_b), "--vault-dir", str(vault_base), "--json"],
         demo,
     )
     run(
@@ -130,14 +141,14 @@ def main() -> int:
                 "desc": "write src/a.txt",
                 "scope": ["src/a.txt"],
                 "verify": exists("src/a.txt"),
-                "blind": {"suite": "core", "baseline": "red", "timeout": 30, "leak": "message"},
+                "blind": {"suite": "a", "baseline": "red", "timeout": 30, "leak": "message"},
             },
             {
                 "id": "T2",
                 "desc": "write src/b.txt",
                 "scope": ["src/b.txt"],
                 "verify": exists("src/b.txt"),
-                "blind": {"suite": "core", "baseline": "red", "timeout": 30, "leak": "message"},
+                "blind": {"suite": "b", "baseline": "red", "timeout": 30, "leak": "message"},
             },
         ]
     }
@@ -176,7 +187,14 @@ def main() -> int:
         print("\n--- kick-1/prompt.txt (the wake-up message) ---")
         print(wake.read_text(encoding="utf-8"))
     print("\n--- git checkpoints ---")
-    subprocess.run(["git", "-C", str(demo), "log", "--oneline", "-5"], check=False)
+    log = subprocess.run(
+        ["git", "-C", str(demo), "log", "--oneline", "-5"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    print(log.stdout.rstrip())
 
     banner("DONE")
     print("demo repo :", demo)
