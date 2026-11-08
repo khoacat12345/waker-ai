@@ -2,6 +2,23 @@
 
 All notable changes to `waker-ai`.
 
+## v1.1.1 — 2026-11-08
+
+### Added / completed (Phase E–F of the blind evaluation spec)
+
+- Acceptance fake agents: prompt/report leakage, public-pass + hidden-fail,
+  vault file tamper, and a full CLI blind run.
+- `Vault.current_hash()` recomputes file hashes on disk; editing a vault file
+  now triggers `VAULT_TAMPER` (the manifest-only hash could not detect it).
+- Skill templates (OpenCode / Claude / Gemini): blind workflow — `vault init`,
+  `add`, `validate`, `start --vault`; never paste hidden tests into the worker
+  chat.
+- README demo GIF includes a blind-evaluation frame.
+
+### Tests
+
+- 186 passed, 1 skipped.
+
 ## v1.1.0 — 2026-11-08
 
 ### Added — Blind Evaluation (Kaggle Mode)
