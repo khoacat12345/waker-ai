@@ -25,6 +25,7 @@ from .state import (
     EventLog,
     RunPaths,
     RunState,
+    acquire_run_lock,
     checkpoint,
     done_ids,
     ensure_runtime_excluded,
@@ -35,6 +36,7 @@ from .state import (
     new_ledger,
     new_run_id,
     read_json,
+    release_run_lock,
     set_task,
     sha256_bytes,
     utcnow,
@@ -141,6 +143,7 @@ class Engine:
 
         run_id = cfg.run_id or new_run_id()
         paths = RunPaths(self.repo, run_id)
+        acquire_run_lock(paths, run_id)
         events = EventLog(paths.events)
         state = RunState(
             run_id=run_id,
@@ -230,6 +233,7 @@ class Engine:
             raise RuntimeError(
                 f"run {run_id} belongs to {state.repo}, not {root}"
             )
+        acquire_run_lock(paths, run_id)
 
         tasks = [Task.from_dict(item) for item in state.tasks]
         constraints = [Task.from_dict(item) for item in state.constraints]
@@ -699,6 +703,7 @@ class Engine:
                 report += f"- kick {record.get('kick')}: **{record.get('label')}**\n"
         report += f"\n_Ghi lúc {utcnow()}_\n"
         self.paths.report.write_text(report, encoding="utf-8", errors="replace")
+        release_run_lock(self.paths)
 
         self.events.append("terminal", diagnosis=diag.value, status=state.status)
         code = 130 if aborted else EXIT_CODES.get(diag, 1)

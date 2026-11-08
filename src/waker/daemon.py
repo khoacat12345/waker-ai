@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -24,9 +25,11 @@ from .state import (
     latest_run,
     new_run_id,
     read_json,
+    run_lock_pid,
     utcnow,
     write_json_atomic,
 )
+from . import winproc
 
 
 def _package_root() -> str:
@@ -90,6 +93,7 @@ def stop_run(repo: str | Path, run_id: str | None = None) -> bool:
     if not run_id:
         return False
     record_path = root / ".waker" / "daemon" / f"{run_id}.json"
+    pid = 0
     if record_path.exists():
         try:
             pid = int(read_json(record_path).get("pid") or 0)
@@ -97,17 +101,27 @@ def stop_run(repo: str | Path, run_id: str | None = None) -> bool:
             pid = 0
         if pid:
             kill_tree(pid)
-            return True
-    # Fallback: mark the run as stopped so the UI is not stuck.
+
+    stopped = bool(pid)
     paths = RunPaths(root, run_id)
     if paths.state.exists():
         state = RunState.load(paths.state)
         if state.status == "running":
             state.status = "aborted"
             state.diagnosis = "ABORTED"
+            state.ended_ts = time.time()
             state.save(paths.state)
-            return True
-    return False
+            stopped = True
+
+    lock = paths.root / "run.lock"
+    if lock.exists():
+        try:
+            lock_pid = run_lock_pid(paths)
+            if not lock_pid or not winproc.pid_alive(lock_pid) or lock_pid == pid:
+                lock.unlink()
+        except (FileNotFoundError, OSError):
+            pass
+    return stopped
 
 
 def _run_status(root: Path, run_id: str | None) -> dict[str, Any]:

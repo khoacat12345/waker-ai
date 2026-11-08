@@ -22,7 +22,15 @@ from .dashboard import serve_dashboard, write_static
 from .engine import Engine, EngineConfig
 from .models import Task
 from .skill_install import PROVIDERS, install_skill
-from .state import RunPaths, RunState, latest_run, new_run_id, read_json
+from .state import (
+    RunPaths,
+    RunState,
+    latest_run,
+    new_run_id,
+    read_json,
+    run_is_active,
+    run_lock_pid,
+)
 from .ui import load_latest, render_markdown, watch as watch_run
 
 
@@ -208,6 +216,14 @@ def cmd_start(args) -> int:
         if failed is not None:
             return failed
     run_id = args.resume or args.run_id or new_run_id()
+    paths = RunPaths(args.repo, run_id)
+    if run_is_active(paths):
+        print(
+            f"run {run_id} đang chạy (pid {run_lock_pid(paths)}); "
+            "dừng nó trước khi start/resume lần nữa.",
+            file=sys.stderr,
+        )
+        return 2
     record = start_detached(args.repo, _run_flags(args), run_id)
     print(json.dumps(record, ensure_ascii=False, indent=2))
     print(f"\nĐang chạy ngầm. Theo dõi: waker status --repo {args.repo} --run {run_id}")

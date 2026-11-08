@@ -2,6 +2,20 @@
 
 All notable changes to `waker-ai`.
 
+## v1.0.4 — 2026-11-08
+
+### Fixed
+
+- **One supervisor per run**: an atomic `run.lock` (pid + timestamp) is acquired
+  by `prepare()` / `from_run()`. Starting or resuming an already-active run is
+  refused instead of spawning a duplicate engine and a duplicate agent.
+  Stale locks (dead pid) are replaced automatically.
+- **`waker stop` is honest**: it now marks the run `aborted`, sets `ended_ts`,
+  and removes the lock. `waker watch` exits instead of showing a stale
+  "running 0/N" forever.
+- Found in the wild: two `--resume` calls produced two supervisors editing the
+  same repo at once. The lock prevents that class of bug.
+
 ## v1.0.3 — 2026-11-08
 
 ### Fixed

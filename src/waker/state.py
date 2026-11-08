@@ -279,3 +279,52 @@ def latest_run(repo: str | Path) -> str | None:
     if not candidates:
         return None
     return max(candidates, key=lambda p: p.stat().st_mtime).name
+
+
+def run_lock_pid(paths: RunPaths) -> int | None:
+    lock = paths.root / "run.lock"
+    try:
+        first = lock.read_text(encoding="utf-8").splitlines()[0]
+        return int(first)
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def run_is_active(paths: RunPaths) -> bool:
+    pid = run_lock_pid(paths)
+    return bool(pid and winproc.pid_alive(pid))
+
+
+def acquire_run_lock(paths: RunPaths, run_id: str) -> None:
+    """One supervisor per run. A stale lock (dead pid) is replaced."""
+    lock = paths.root / "run.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    for _ in range(2):
+        try:
+            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            pid = run_lock_pid(paths)
+            if pid and winproc.pid_alive(pid):
+                raise RuntimeError(
+                    f"run {run_id} is already active (pid {pid})"
+                )
+            try:
+                lock.unlink()
+            except FileNotFoundError:
+                pass
+            continue
+        try:
+            os.write(handle, f"{os.getpid()}\n{utcnow()}\n{run_id}\n".encode("utf-8"))
+        finally:
+            os.close(handle)
+        return
+    raise RuntimeError(f"could not acquire run lock for {run_id}")
+
+
+def release_run_lock(paths: RunPaths) -> None:
+    if run_lock_pid(paths) != os.getpid():
+        return
+    try:
+        (paths.root / "run.lock").unlink()
+    except FileNotFoundError:
+        pass

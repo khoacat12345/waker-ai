@@ -87,3 +87,31 @@ def test_daemon_starts_a_detached_run_and_reports_status(repo: Path, tasks):
 
 def test_stop_unknown_run_returns_false(tmp_path: Path):
     assert stop_run(tmp_path, "deadbeef") is False
+
+
+def test_stop_marks_running_state_aborted(tmp_path: Path):
+    from waker.state import RunPaths, RunState, write_json_atomic
+
+    paths = RunPaths(tmp_path, "r1")
+    paths.root.mkdir(parents=True)
+    state = RunState(
+        run_id="r1",
+        repo=str(tmp_path),
+        prompt="",
+        agent_command="true",
+        test_command=None,
+        baseline_commit="",
+        baseline_test_hash="",
+        test_globs=[],
+        started_at="now",
+        tasks=[],
+        session_id="ses",
+        status="running",
+    )
+    state.save(paths.state)
+    daemon_dir = tmp_path / ".waker" / "daemon"
+    daemon_dir.mkdir(parents=True)
+    write_json_atomic(daemon_dir / "r1.json", {"pid": 999999999})
+
+    assert stop_run(tmp_path, "r1") is True
+    assert RunState.load(paths.state).status == "aborted"
