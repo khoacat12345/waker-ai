@@ -418,6 +418,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     start = sub.add_parser("start", help="chạy supervisor ở background (detached)")
     _add_run_arguments(start)
+    start.add_argument("--detach", action="store_true", help="chạy ngầm (mặc định)")
     start.set_defaults(func=cmd_start, detach=True)
 
     stop = sub.add_parser("stop", help="dừng run đang chạy")

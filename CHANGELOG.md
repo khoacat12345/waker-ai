@@ -2,6 +2,14 @@
 
 All notable changes to `waker-ai`.
 
+## v1.0.2 — 2026-11-08
+
+### Fixed
+
+- `waker start --detach` now accepts the `--detach` flag used by the skill
+  documentation. `start` was already detached; argparse rejected the redundant
+  flag, which broke the documented command.
+
 ## v1.0.1 — 2026-11-08
 
 ### Fixed

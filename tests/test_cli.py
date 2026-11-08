@@ -251,3 +251,14 @@ def test_cli_plan_warns_on_prose_prompt(tmp_path: Path, repo: Path, capsys):
     captured = capsys.readouterr()
     assert "Gợi ý" in captured.err
     assert "--via opencode" in captured.err
+
+
+
+def test_cli_start_accepts_detach_flag(capsys):
+    from waker.cli import build_parser, cmd_start
+
+    args = build_parser().parse_args(
+        ["start", "--detach", "--tasks", "tasks.yaml", "--agent", "true"]
+    )
+    assert args.detach is True
+    assert args.func is cmd_start

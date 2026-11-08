@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "waker-ai"
-version = "1.0.1"
+version = "1.0.2"
 description = "Watchdog & supervisor for AI coding agents: never let an agent sleep on the job."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -65,3 +65,4 @@ addopts = "-q"
 pythonpath = ["src"]
 filterwarnings = ["ignore::DeprecationWarning"]
 markers = ["live: real CLI E2E, disabled unless WAKER_LIVE_TEST=1"]
+
