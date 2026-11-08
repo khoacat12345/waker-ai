@@ -1,4 +1,4 @@
----
+﻿---
 name: waker
 description: Supervise a long coding task until every checklist item has on-disk evidence and tests pass. Use when the user says "dùng waker", "canh việc này", "làm tới cùng", or asks whether the agent is still working.
 ---
@@ -16,7 +16,7 @@ Bạn **không được** tự tuyên bố task xong. Chỉ daemon quyết đị
 
 ## Bắt đầu run mới
 
-1. Lấy **nguyên văn** prompt của user.
+1. Lấy **nguyên văn** prompt của user (bỏ tiền tố `@waker` nếu có).
 2. `waker plan --prompt "<nguyên văn>" --out .waker/tasks.yaml --repo .`
 3. In `.waker/tasks.yaml` + cảnh báo lint, hỏi `OK để chạy? (ok / sửa)`.
 4. Khi user đồng ý:
@@ -40,3 +40,4 @@ waker start --detach --repo . --tasks .waker/tasks.yaml \
 - Không sửa file test.
 - Không nói "xong" — chỉ đọc `status`/`report`.
 - "Còn thiếu gì" = danh sách task `status != done` trong `waker status --format json`.
+

@@ -18,11 +18,22 @@ Bạn **không được** tự tuyên bố task xong. Chỉ daemon quyết đị
 
 ## Bắt đầu run mới
 
-1. Lấy **nguyên văn** prompt của user. Không tóm tắt, không diễn giải.
-2. `waker plan --prompt "<nguyên văn>" --out .waker/tasks.yaml --repo .`
-3. In nguyên `.waker/tasks.yaml` + mọi cảnh báo lint cho user xem.
-4. Hỏi đúng một câu: `OK để chạy? (ok / sửa)`.
-5. Khi user đồng ý, chạy:
+1. **Xác định repo đích.** Nếu prompt nhắc path không có trong repo hiện tại
+   (ví dụ `.agents/v2/...` khi đang ở `waker-ai`), hỏi user repo đích trước khi
+   plan. Không đoán.
+2. Lấy **nguyên văn** prompt của user (bỏ tiền tố `@waker` nếu có). Không tóm
+   tắt, không diễn giải.
+3. `waker plan --prompt "<nguyên văn>" --out .waker/tasks.yaml --repo <repo đích>`
+4. Đọc kết quả lint:
+   - **Nếu có ERROR** (thiếu scope/verify, trùng scope, verify rỗng):
+     **KHÔNG hỏi "OK để chạy".** Trình bày lỗi và đề xuất đúng 2 lựa chọn:
+     a) `waker plan --via opencode --model <model> --prompt "<nguyên văn>" --repo <repo>`
+        để một turn model điền scope/verify, rồi lint lại;
+     b) user gộp/sửa task thủ công.
+   - Chỉ đi tiếp khi lint **0 error**.
+5. Khi lint sạch: in `.waker/tasks.yaml` + cảnh báo (nếu có), rồi hỏi đúng một
+   câu: `OK để chạy? (ok / sửa)`.
+6. Khi user đồng ý, chạy:
 
 ```bash
 waker start --detach --repo . --tasks .waker/tasks.yaml \
@@ -38,7 +49,11 @@ waker start --detach --repo . --tasks .waker/tasks.yaml \
   --agent "claude -p --resume {session} {prompt}"
 ```
 
-6. Trả lời: "Đang chạy ngầm. Gõ 'tiến độ' để xem."
+7. Trả lời: "Đang chạy ngầm. Gõ 'tiến độ' để xem."
+
+> Prompt kiểu "lệnh thực thi" (phê duyệt, quyết định, đánh số từng dòng) thường
+> không phải task. Dùng `--via opencode` để gộp thành 3–6 task có scope/verify,
+> thay vì biến mỗi dòng thành một task rỗng.
 
 ## Dừng
 
@@ -46,6 +61,7 @@ waker start --detach --repo . --tasks .waker/tasks.yaml \
 
 ## Quy tắc cứng
 
+- Lint còn ERROR thì **không được start** và **không được hỏi "OK để chạy"**.
 - Không sửa `tasks.yaml` sau khi đã start (hash sẽ báo TAMPER).
 - Không sửa file test. Muốn đổi test thì dừng run, sửa, chạy lại.
 - Không nói "xong" — chỉ đọc `status`/`report`.
