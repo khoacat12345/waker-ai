@@ -46,3 +46,14 @@ def test_unknown_provider_raises(tmp_path: Path):
         assert "unknown provider" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("should have raised")
+
+
+def test_opencode_global_install_creates_xdg_mirror(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    target = install_skill("opencode", global_=True)
+    assert target == tmp_path / ".opencode" / "skills" / "waker" / "SKILL.md"
+    assert target.exists()
+    xdg_target = tmp_path / ".config" / "opencode" / "skills" / "waker" / "SKILL.md"
+    assert xdg_target.exists()
+    assert xdg_target.read_text(encoding="utf-8") == target.read_text(encoding="utf-8")
+

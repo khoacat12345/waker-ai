@@ -47,4 +47,9 @@ def install_skill(provider: str, root: str | Path = ".", global_: bool = False) 
     target = base / TARGETS[provider]
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(template, target)
+    if provider == "opencode" and global_:
+        # Also mirror to ~/.config/opencode/skills/waker/SKILL.md (XDG compliant for Linux/macOS)
+        xdg_target = base / ".config" / "opencode" / "skills" / "waker" / "SKILL.md"
+        xdg_target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(template, xdg_target)
     return target

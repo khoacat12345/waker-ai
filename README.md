@@ -2,6 +2,7 @@
 
 [![tests](https://github.com/khoacat12345/waker-ai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/khoacat12345/waker-ai/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/waker-ai.svg)](https://pypi.org/project/waker-ai/)
+[![Agensi](https://img.shields.io/badge/Agensi-Marketplace-0066FF)](https://www.agensi.io/skills/waker-ai)
 
 ![waker demo](docs/demo.gif)
 
