@@ -16,7 +16,10 @@ def test_install_skill_for_each_provider(tmp_path: Path):
         target = install_skill(provider, tmp_path)
         assert target == expected[provider]
         assert target.exists()
-        assert "waker" in target.read_text(encoding="utf-8").lower()
+        text = target.read_text(encoding="utf-8")
+        assert "waker" in text.lower()
+        assert "waker watch" in text
+        assert "chạy ngầm" in text
 
 
 def test_generic_install_is_idempotent(tmp_path: Path):

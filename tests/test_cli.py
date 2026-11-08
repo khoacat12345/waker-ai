@@ -93,7 +93,10 @@ def test_cli_install_skill(tmp_path: Path, capsys):
     assert code == 0
     target = tmp_path / ".opencode" / "skills" / "waker" / "SKILL.md"
     assert target.exists()
-    assert "waker" in target.read_text(encoding="utf-8").lower()
+    text = target.read_text(encoding="utf-8")
+    assert "waker" in text.lower()
+    assert "waker watch" in text
+    assert "Đã bật chạy ngầm" in text
     capsys.readouterr()
 
 
@@ -101,7 +104,9 @@ def test_cli_setup_explicit_provider(tmp_path: Path, capsys):
     code = main(["setup", "--for", "opencode", "--dir", str(tmp_path), "--local"])
     assert code == 0
     assert (tmp_path / ".opencode" / "skills" / "waker" / "SKILL.md").exists()
-    capsys.readouterr()
+    out = capsys.readouterr().out
+    assert "waker watch" in out
+    assert "tiến độ" in out
 
 
 def test_cli_setup_auto_detects(tmp_path: Path, monkeypatch, capsys):

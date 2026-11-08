@@ -46,7 +46,8 @@ waker start --detach --repo . --tasks .waker/tasks.yaml \
   --test "<test command>" --max-kicks 5 --max-cost 1.0
 ```
 
-5. Report the run id and say: "Running in the background."
+5. Report the run id and say: "Running in the background. Ask me for progress
+   here, or run `waker watch --repo .` in a terminal for the live view."
 
 ## Status
 
@@ -55,6 +56,8 @@ waker status --format md --repo .
 waker report --repo .
 ```
 
+If the user sends any message while a run is active, run
+`waker status --format md --repo .` and paste the table before answering.
 Paste the table verbatim. Never declare success yourself — only `waker status`
 and `waker report` decide. If the user asks "what is missing", read task status
 from `waker status --format json`.

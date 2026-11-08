@@ -245,6 +245,7 @@ def cmd_start(args) -> int:
     record = start_detached(args.repo, _run_flags(args), run_id)
     print(json.dumps(record, ensure_ascii=False, indent=2))
     print(f"\nĐang chạy ngầm. Theo dõi: waker status --repo {args.repo} --run {run_id}")
+    print(f"Xem trực tiếp: waker watch --repo {args.repo}")
     return 0
 
 
@@ -308,6 +309,8 @@ def cmd_setup(args) -> int:
         print(
             "\nXong. Khởi động lại phiên chat/OpenCode để skill `waker` được nạp."
         )
+        print("Xem tiến độ trực tiếp: waker watch")
+        print('Hoặc hỏi "tiến độ" trong chat — agent sẽ dán bảng trạng thái.')
     return 0
 
 

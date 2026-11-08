@@ -2,6 +2,17 @@
 
 All notable changes to `waker-ai`.
 
+## Unreleased
+
+### Changed
+
+- `waker setup` now prints the live progress hint: `waker watch` (terminal) or
+  ask "tiến độ" in chat. `waker start` prints the same live-view command.
+- Skill templates (OpenCode / Claude / Gemini / generic) now require the agent
+  to say after starting a run: "Đã bật chạy ngầm. Hỏi 'tiến độ' trong chat hoặc
+  gõ `waker watch --repo .` để xem trực tiếp." While a run is active, the agent
+  runs `waker status --format md` and pastes the table on every user message.
+
 ## v1.1.2 — 2026-11-08
 
 ### Fixed

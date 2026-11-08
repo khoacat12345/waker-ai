@@ -10,6 +10,8 @@ Bạn **không được** tự tuyên bố task xong. Chỉ daemon quyết đị
 
 ## Nếu đã có run đang chạy
 
+Mỗi lần user nhắn (kể cả không hỏi tiến độ), trước khi trả lời:
+
 1. Chạy `waker status --format md --repo .`
 2. Chèn **nguyên bảng** vào đầu câu trả lời.
 3. Nếu status khác `running`: đọc `waker report --repo .` và tóm tắt đúng số liệu.
@@ -28,7 +30,9 @@ waker start --detach --repo . --tasks .waker/tasks.yaml \
   [--max-kicks 5] [--max-cost 1.0]
 ```
 
-5. Trả lời: "Đang chạy ngầm. Gõ 'tiến độ' để xem."
+5. Trả lời ngay, không im lặng: "Đã bật chạy ngầm. Bạn có thể hỏi mình
+   'tiến độ' ngay trong chat, hoặc mở terminal gõ `waker watch --repo .`
+   để xem trực tiếp."
 
 ## Dừng
 

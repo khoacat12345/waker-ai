@@ -10,6 +10,8 @@ Bạn **không được** tự tuyên bố task xong. Chỉ daemon quyết đị
 
 ## Nếu đã có run đang chạy
 
+Mỗi lần user nhắn (kể cả không hỏi tiến độ), trước khi trả lời:
+
 1. Chạy `waker status --format md --repo .`
 2. Chèn **nguyên bảng** vào đầu câu trả lời.
 3. Nếu status là `running`: không suy đoán, không hứa hẹn thay daemon.
@@ -49,7 +51,9 @@ waker start --detach --repo . --tasks .waker/tasks.yaml \
   --agent "claude -p --resume {session} {prompt}"
 ```
 
-7. Trả lời: "Đang chạy ngầm. Gõ 'tiến độ' để xem."
+7. Trả lời ngay, không im lặng: "Đã bật chạy ngầm. Bạn có thể hỏi mình
+   'tiến độ' ngay trong chat, hoặc mở terminal gõ `waker watch --repo .`
+   để xem trực tiếp."
 
 > Prompt kiểu "lệnh thực thi" (phê duyệt, quyết định, đánh số từng dòng) thường
 > không phải task. Dùng `--via opencode` để gộp thành 3–6 task có scope/verify,
