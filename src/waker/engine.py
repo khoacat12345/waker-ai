@@ -341,6 +341,7 @@ class Engine:
                 )
                 turn = self.adapter.run_turn(prompt, ctx)
                 state.cost_usd += max(0.0, turn.cost_usd)
+                state.save(self.paths.state)
                 if turn.session_id and turn.session_id != state.agent_session_id:
                     state.agent_session_id = turn.session_id
                     self.events.append(
@@ -374,8 +375,11 @@ class Engine:
                     label=diag.value,
                     task_done=sum(
                         1
-                        for rec in read_json(self.paths.ledger).get("tasks", {}).values()
-                        if rec.get("status") == "done"
+                        for task_id, rec in read_json(self.paths.ledger)
+                        .get("tasks", {})
+                        .items()
+                        if task_id in {task.id for task in self.config.tasks}
+                        and rec.get("status") == "done"
                     ),
                     total=len(self.config.tasks),
                     test_exit=obs.test_exit,

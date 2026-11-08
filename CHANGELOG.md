@@ -2,6 +2,16 @@
 
 All notable changes to `waker-ai`.
 
+## v1.0.5 — 2026-11-08
+
+### Fixed
+
+- Progress no longer counts constraints in the numerator: a run with 4 tasks
+  and 1 constraint now shows `4/4` instead of `5/4 — 125%`.
+- The `diagnose` event uses the same work-task count.
+- Cost is persisted immediately after every turn. A killed/stopped run no longer
+  loses the cost of the turn that was in flight.
+
 ## v1.0.4 — 2026-11-08
 
 ### Fixed

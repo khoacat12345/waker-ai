@@ -57,3 +57,19 @@ def test_markdown_contains_evidence_and_gate():
     assert "src/auth/guard.py" in text
     assert "test_pay.py:31 KeyError" in text
     assert "tests/test_pay.py::test_refund" in text
+
+
+def test_progress_ignores_constraints():
+    state = make_state(done=1)
+    ledger = {
+        "tasks": {
+            "T1": {"status": "done", "evidence": {"files": ["src/a.py"], "gate": "pass"}},
+            "T2": {"status": "pending", "evidence": None},
+            "C1": {"status": "done", "evidence": {"gate": "pass", "files": []}},
+        },
+        "test": {"exit_code": 0},
+    }
+    text = render_markdown(state, ledger)
+    assert "1/2" in text
+    assert "125%" not in text
+    assert "2/2" not in text

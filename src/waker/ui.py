@@ -57,8 +57,15 @@ def _task_rows(state: RunState, ledger: dict[str, Any]) -> list[list[str]]:
 
 def render_markdown(state: RunState, ledger: dict[str, Any]) -> str:
     tasks = state.task_objects()
+    task_ids = {task.id for task in tasks}
     total = len(tasks)
-    done = len([1 for rec in ledger.get("tasks", {}).values() if rec.get("status") == "done"])
+    done = len(
+        [
+            1
+            for task_id, rec in ledger.get("tasks", {}).items()
+            if task_id in task_ids and rec.get("status") == "done"
+        ]
+    )
     percent = int(round(100 * done / total)) if total else 0
     test = ledger.get("test", {})
     test_exit = test.get("exit_code")
@@ -101,8 +108,15 @@ def build_rich(state: RunState, ledger: dict[str, Any]):
     from rich.text import Text
 
     tasks = state.task_objects()
+    task_ids = {task.id for task in tasks}
     total = len(tasks)
-    done = len([1 for rec in ledger.get("tasks", {}).values() if rec.get("status") == "done"])
+    done = len(
+        [
+            1
+            for task_id, rec in ledger.get("tasks", {}).items()
+            if task_id in task_ids and rec.get("status") == "done"
+        ]
+    )
     percent = int(round(100 * done / total)) if total else 0
 
     table = Table(box=box.SIMPLE_HEAD, expand=True)
