@@ -1,7 +1,7 @@
 # WAKER BLIND EVALUATION — SPEC THI CÔNG (v1.1.0)
 
 **Feature:** Hidden Test Vault & Blind Evaluation (Kaggle Mode)
-**Trạng thái:** Đã duyệt — sẵn sàng thi công
+**Trạng thái:** Đã triển khai v1.1.0 (Phase A–D); v1.2 cho sandbox/encryption
 **Target:** `waker-ai v1.1.0`
 **Tác giả:** Tuankhoa (Founder / Lead Architect) & Waker maintainers
 **Cập nhật:** 2026-11-08

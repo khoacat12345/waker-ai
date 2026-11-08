@@ -128,6 +128,39 @@ Skills are loaded when the chat session starts — restart your CLI after
 installing. A `pip install` cannot write into your agent's config by itself
 (that is a security boundary); `waker setup` is the one-time post-install step.
 
+## Blind evaluation (v1.1)
+
+The Architect (chatbox) can write **hidden tests** that the worker never sees:
+
+```bash
+waker vault init --repo .
+# → vault_id: 9f3a2c7d1e4b (the vault lives outside the repo)
+
+waker vault add --vault 9f3a2c7d1e4b --suite auth --task T1 tests/test_auth_hidden.py
+waker vault validate --vault 9f3a2c7d1e4b --repo .
+# → fails on baseline? good. import error / skip / flaky? reject.
+
+waker run --tasks .waker/tasks.yaml --vault 9f3a2c7d1e4b --adapter opencode ...
+```
+
+```yaml
+- id: T1
+  verify: "pytest tests/test_auth_smoke.py -q"   # public smoke, worker sees
+  public_api: ["login(name, password) -> token | None"]
+  blind:
+    suite: auth
+    baseline: red          # hidden must fail before work
+    leak: message          # minimal | message
+```
+
+- `DONE` requires **100% hidden pass** plus public smoke and constraints.
+- Failures are sanitized: `hidden://auth/test_3: AssertionError: ...`; no source,
+  no paths, no locals.
+- `VAULT_TAMPER` stops the run if the vault hash changes.
+- **Honest scope:** v1.1 is blind by construction, not an adversarial sandbox.
+  The worker runs as the same OS user; real isolation (Docker/Windows Sandbox)
+  is v1.2. See [`docs/BLIND_EVALUATION_SPEC.md`](docs/BLIND_EVALUATION_SPEC.md).
+
 ## How done is decided
 
 For every task:
@@ -213,8 +246,8 @@ Phase reports: `.waker/runs/phase1_report.md`, `phase2_report.md`, `phase3_repor
 
 ## Status
 
-**v1.0.0** — engine, 3 adapter tiers, daemon/skills, CI matrix, dashboard and
-release automation are complete.
+**v1.1.0** — blind evaluation (hidden vault + sanitized grading), engine,
+3 adapter tiers, daemon/skills, CI matrix, dashboard and release automation.
 
 Maturity:
 

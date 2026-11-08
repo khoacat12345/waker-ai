@@ -2,6 +2,25 @@
 
 All notable changes to `waker-ai`.
 
+## v1.1.0 — 2026-11-08
+
+### Added — Blind Evaluation (Kaggle Mode)
+
+- Hidden test vault **outside the repo** (`%LOCALAPPDATA%` / XDG), referenced by
+  a random `vault_id` only.
+- `waker vault init/add/list/rm` — Architect stores hidden suites; file hashes
+  and suite hash in the manifest, never test source.
+- `waker vault validate` — baseline red/green, collect errors, skip/xfail,
+  timeout and two-run flakiness check; marks `validated_at`.
+- `blind_runner` — grades in an isolated temp dir, maps failures to opaque
+  `test_N` ids, redacts paths, supports `leak=minimal|message`, always cleans up.
+- Engine: `--vault <id>` on `run`/`start`, auto-validate at prepare, gates
+  `G_hidden` / `G_vault`, diagnoses `HIDDEN_FAIL`, `VAULT_TAMPER`,
+  `SUSPECT_TEST`; hidden counts in ledger/status/report; sanitized wake prompts.
+- 40 new tests for the feature (vault, validation, grading, engine integration).
+- **Security model:** blind by construction, not an adversarial sandbox. Same
+  user can still read the vault if it searches; Docker/Windows Sandbox is v1.2.
+
 ## v1.0.5 — 2026-11-08
 
 ### Fixed
