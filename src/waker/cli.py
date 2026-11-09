@@ -42,7 +42,7 @@ def _parse_bundle(args) -> planner.PlanBundle:
     elif args.prompt:
         text = args.prompt
     else:
-        raise SystemExit("cần --prompt hoặc --file")
+        raise SystemExit("requires --prompt or --file")
     if args.via == "rules":
         return planner.parse_prompt(text)
     from .llm_plan import generate_contract
@@ -52,12 +52,12 @@ def _parse_bundle(args) -> planner.PlanBundle:
             text, args.repo, model=args.model, binary=args.binary
         )
     except (RuntimeError, ValueError) as exc:
-        raise SystemExit(f"planner lỗi: {exc}")
+        raise SystemExit(f"planner error: {exc}")
 
 
 def _load_contract(args) -> tuple[list[Task], list[Task]]:
     if not getattr(args, "tasks", None) and not getattr(args, "prompt", None):
-        raise SystemExit("cần --tasks hoặc --prompt")
+        raise SystemExit("requires --tasks or --prompt")
     bundle = planner.load_contract(getattr(args, "tasks", None), getattr(args, "prompt", None))
     return bundle.tasks, bundle.constraints
 
@@ -67,7 +67,7 @@ def _lint_or_fail(args, tasks: list[Task], constraints: list[Task]) -> int | Non
     if issues:
         print(planner.format_issues(issues), file=sys.stderr)
     if issues and not getattr(args, "no_lint", False) and planner.has_errors(issues):
-        print("Contract không hợp lệ - dừng (fail closed).", file=sys.stderr)
+        print("Invalid contract - stopping (fail closed).", file=sys.stderr)
         return 2
     return None
 
@@ -83,10 +83,10 @@ def _build_adapter(args):
         )
     if adapter == "pty":
         if not args.agent:
-            raise SystemExit("--agent bắt buộc khi dùng --adapter pty")
+            raise SystemExit("--agent is required with --adapter pty")
         return PtyAdapter(args.agent)
     if not args.agent:
-        raise SystemExit("--agent bắt buộc khi dùng --adapter generic")
+        raise SystemExit("--agent is required with --adapter generic")
     return GenericProcessAdapter(args.agent)
 
 
@@ -96,8 +96,8 @@ def cmd_plan(args) -> int:
         work = [task for task in bundle.tasks if task.kind == "work"]
         if len(work) >= 6 and not any(task.scope for task in work):
             print(
-                "\n# Gợi ý: prompt này có vẻ là văn xuôi/lệnh thực thi, không phải "
-                "task list. Dùng `--via opencode` để model điền scope/verify.",
+                "\n# Hint: this prompt looks like prose/an instruction, not a "
+                "task list. Use `--via opencode` to let a model fill scope/verify.",
                 file=sys.stderr,
             )
     out = Path(args.out)
@@ -110,7 +110,7 @@ def cmd_plan(args) -> int:
     if issues:
         print("\n# lint", file=sys.stderr)
         print(planner.format_issues(issues), file=sys.stderr)
-    print(f"\n# đã ghi {out}", file=sys.stderr)
+    print(f"\n# wrote {out}", file=sys.stderr)
     return 2 if planner.has_errors(issues) else 0
 
 
@@ -134,7 +134,7 @@ def cmd_run(args) -> int:
         result = engine.run()
         print(render_markdown(RunState.load(paths.state), read_json(paths.ledger)))
         print(f"\nreport: {result.report_path}")
-        print(f"kết luận: {result.diagnosis.value} (exit {result.exit_code})")
+        print(f"result: {result.diagnosis.value} (exit {result.exit_code})")
         return result.exit_code
 
     tasks, constraints = _load_contract(args)
@@ -143,7 +143,7 @@ def cmd_run(args) -> int:
         return failed
     if any(task.blind for task in tasks) and not args.vault:
         print(
-            "task có `blind` nhưng thiếu `--vault <id>`; dừng (fail closed).",
+            "task has `blind` but no `--vault <id>`; stopping (fail closed).",
             file=sys.stderr,
         )
         return 2
@@ -178,7 +178,7 @@ def cmd_run(args) -> int:
     paths = RunPaths(args.repo, result.run_id)
     print(render_markdown(RunState.load(paths.state), read_json(paths.ledger)))
     print(f"\nreport: {result.report_path}")
-    print(f"kết luận: {result.diagnosis.value} (exit {result.exit_code})")
+    print(f"result: {result.diagnosis.value} (exit {result.exit_code})")
     return result.exit_code
 
 
@@ -229,7 +229,7 @@ def cmd_start(args) -> int:
             return failed
         if any(task.blind for task in tasks) and not args.vault:
             print(
-                "task có `blind` nhưng thiếu `--vault <id>`; dừng (fail closed).",
+                "task has `blind` but no `--vault <id>`; stopping (fail closed).",
                 file=sys.stderr,
             )
             return 2
@@ -237,21 +237,21 @@ def cmd_start(args) -> int:
     paths = RunPaths(args.repo, run_id)
     if run_is_active(paths):
         print(
-            f"run {run_id} đang chạy (pid {run_lock_pid(paths)}); "
-            "dừng nó trước khi start/resume lần nữa.",
+            f"run {run_id} is active (pid {run_lock_pid(paths)}); "
+            "stop it before starting/resuming again.",
             file=sys.stderr,
         )
         return 2
     record = start_detached(args.repo, _run_flags(args), run_id)
     print(json.dumps(record, ensure_ascii=False, indent=2))
-    print(f"\nĐang chạy ngầm. Theo dõi: waker status --repo {args.repo} --run {run_id}")
-    print(f"Xem trực tiếp: waker watch --repo {args.repo}")
+    print(f"\nRunning in the background. Track: waker status --repo {args.repo} --run {run_id}")
+    print(f"Live view: waker watch --repo {args.repo}")
     return 0
 
 
 def cmd_stop(args) -> int:
     stopped = stop_run(args.repo, args.run)
-    print("đã dừng" if stopped else "không tìm thấy run đang chạy")
+    print("stopped" if stopped else "no active run found")
     return 0 if stopped else 1
 
 
@@ -262,7 +262,7 @@ def cmd_serve(args) -> int:
 
 def cmd_install_skill(args) -> int:
     target = install_skill(args.provider, args.dir, global_=args.global_)
-    print(f"đã cài skill cho {args.provider}: {target}")
+    print(f"installed skill for {args.provider}: {target}")
     return 0
 
 
@@ -291,7 +291,7 @@ def cmd_setup(args) -> int:
         providers = _providers_from(detect_tools(), Path.home())
     if not providers:
         print(
-            "Không dò thấy CLI nào. Dùng --for opencode|claude|gemini|generic.",
+            "No CLI detected. Use --for opencode|claude|gemini|generic.",
             file=sys.stderr,
         )
         return 1
@@ -299,7 +299,7 @@ def cmd_setup(args) -> int:
     installed = []
     for provider in dict.fromkeys(providers):
         if args.dry_run:
-            print(f"[dry-run] sẽ cài skill cho {provider}")
+            print(f"[dry-run] would install skill for {provider}")
             continue
         target = install_skill(provider, args.dir, global_=not args.local)
         print(f"{provider}: {target}")
@@ -307,10 +307,10 @@ def cmd_setup(args) -> int:
 
     if installed:
         print(
-            "\nXong. Khởi động lại phiên chat/OpenCode để skill `waker` được nạp."
+            "\nDone. Restart the chat/OpenCode session so the `waker` skill is loaded."
         )
-        print("Xem tiến độ trực tiếp: waker watch")
-        print('Hoặc hỏi "tiến độ" trong chat — agent sẽ dán bảng trạng thái.')
+        print("Live progress: waker watch")
+        print('Or ask "progress" in chat — the agent will paste the status table.')
     return 0
 
 
@@ -376,7 +376,7 @@ def cmd_detect(args) -> int:
         print(json.dumps([item.to_dict() for item in results], ensure_ascii=False, indent=2))
     elif not results:
         print(
-            "không phát hiện test runner. Dùng --test để chỉ định.",
+            "no test runner detected. Use --test to specify one.",
             file=sys.stderr,
         )
     else:
@@ -428,7 +428,7 @@ def cmd_vault_add(args) -> int:
         print(f"files    : {len(entry['files'])}")
         print(f"hash     : {entry['hash']}")
         print(f"baseline : {entry['baseline']}")
-        print("validated: false (chạy `waker vault validate` trước khi start)")
+        print("validated: false (run `waker vault validate` before start)")
     return 0
 
 
@@ -450,7 +450,7 @@ def cmd_vault_list(args) -> int:
         )
         return 0
     if not rows:
-        print("(vault rỗng)")
+        print("(empty vault)")
         return 0
     print(f"{'suite':<16} {'task':<8} {'files':<6} {'hash':<18} {'validated':<10} leak")
     for row in rows:
@@ -463,11 +463,11 @@ def cmd_vault_list(args) -> int:
 
 def cmd_vault_rm(args) -> int:
     if not args.yes:
-        print("dùng --yes để xoá suite khỏi vault", file=sys.stderr)
+        print("use --yes to remove the suite from the vault", file=sys.stderr)
         return 2
     vault = Vault.load(args.vault, base_dir=args.vault_dir)
     removed = vault.remove_suite(args.suite)
-    print(f"đã xoá suite {args.suite}" if removed else f"không có suite {args.suite}")
+    print(f"removed suite {args.suite}" if removed else f"no such suite {args.suite}")
     return 0 if removed else 1
 
 
@@ -499,11 +499,11 @@ def cmd_report(args) -> int:
     else:
         run_id = latest_run(args.repo)
         if not run_id:
-            print("chưa có run nào", file=sys.stderr)
+            print("no runs yet", file=sys.stderr)
             return 1
         paths = RunPaths(args.repo, run_id)
     if not paths.report.exists():
-        print("chưa có report", file=sys.stderr)
+        print("no report yet", file=sys.stderr)
         return 1
     print(paths.report.read_text(encoding="utf-8", errors="replace"))
     return 0
@@ -512,19 +512,19 @@ def cmd_report(args) -> int:
 def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--tasks")
     parser.add_argument("--prompt")
-    parser.add_argument("--resume", default=None, help="run id để chạy tiếp")
+    parser.add_argument("--resume", default=None, help="run id to resume")
     parser.add_argument("--test", default=None)
-    parser.add_argument("--agent", default=None, help="lệnh agent cho adapter generic/pty")
+    parser.add_argument("--agent", default=None, help="agent command for generic/pty adapter")
     parser.add_argument("--adapter", choices=["generic", "opencode", "claude", "pty"], default=None)
-    parser.add_argument("--model", default=None, help="provider/model cho OpenCode")
-    parser.add_argument("--binary", default=None, help="đường dẫn CLI (opencode/claude)")
+    parser.add_argument("--model", default=None, help="provider/model for OpenCode")
+    parser.add_argument("--binary", default=None, help="CLI path (opencode/claude)")
     parser.add_argument("--permission-mode", default=None, help="Claude Code permission mode")
     parser.add_argument("--vault", default=None, help="hidden test vault id (blind)")
     parser.add_argument("--vault-dir", default=None, help="vault base dir (test/CI)")
     parser.add_argument("--repo", default=".")
     parser.add_argument("--max-kicks", type=int, default=None)
-    parser.add_argument("--max-cost", type=float, default=0.0, help="USD; 0 = tắt cost guard")
-    parser.add_argument("--full-suite-every", type=int, default=0, help="chạy full suite mỗi N kick")
+    parser.add_argument("--max-cost", type=float, default=0.0, help="USD; 0 = disable cost guard")
+    parser.add_argument("--full-suite-every", type=int, default=0, help="run the full suite every N kicks")
     parser.add_argument("--turn-timeout", type=float, default=900.0)
     parser.add_argument("--verify-timeout", type=float, default=300.0)
     parser.add_argument("--freeze-after", type=float, default=300.0)
@@ -543,7 +543,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"waker {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    plan = sub.add_parser("plan", help="bóc prompt thành hợp đồng (0 token)")
+    plan = sub.add_parser("plan", help="turn a prompt into a contract (0 tokens)")
     plan.add_argument("--prompt")
     plan.add_argument("--file")
     plan.add_argument("--out", default=".waker/tasks.yaml")
@@ -554,38 +554,38 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--json", action="store_true")
     plan.set_defaults(func=cmd_plan)
 
-    lint = sub.add_parser("lint", help="kiểm tra hợp đồng (0 token)")
+    lint = sub.add_parser("lint", help="validate the contract (0 tokens)")
     lint.add_argument("--tasks", required=True)
     lint.add_argument("--repo", default=".")
     lint.set_defaults(func=cmd_lint)
 
-    run = sub.add_parser("run", help="chạy supervisor ở foreground")
+    run = sub.add_parser("run", help="run the supervisor in the foreground")
     _add_run_arguments(run)
     run.set_defaults(func=cmd_run)
 
-    start = sub.add_parser("start", help="chạy supervisor ở background (detached)")
+    start = sub.add_parser("start", help="run the supervisor in the background (detached)")
     _add_run_arguments(start)
-    start.add_argument("--detach", action="store_true", help="chạy ngầm (mặc định)")
+    start.add_argument("--detach", action="store_true", help="run detached (default)")
     start.set_defaults(func=cmd_start, detach=True)
 
-    stop = sub.add_parser("stop", help="dừng run đang chạy")
+    stop = sub.add_parser("stop", help="stop the active run")
     stop.add_argument("--repo", default=".")
     stop.add_argument("--run")
     stop.set_defaults(func=cmd_stop)
 
-    serve_parser = sub.add_parser("serve", help="HTTP daemon trên loopback")
+    serve_parser = sub.add_parser("serve", help="HTTP daemon on loopback")
     serve_parser.add_argument("--repo", default=".")
     serve_parser.add_argument("--host", default="127.0.0.1")
     serve_parser.add_argument("--port", type=int, default=47821)
     serve_parser.set_defaults(func=cmd_serve)
 
-    status = sub.add_parser("status", help="bảng tiến độ")
+    status = sub.add_parser("status", help="progress table")
     status.add_argument("--repo", default=".")
     status.add_argument("--run")
     status.add_argument("--format", choices=["md", "json"], default="md")
     status.set_defaults(func=cmd_status)
 
-    watch = sub.add_parser("watch", help="TUI sống (Rich Live)")
+    watch = sub.add_parser("watch", help="live TUI (Rich Live)")
     watch.add_argument("--repo", default=".")
     watch.add_argument("--run")
     watch.add_argument("--interval", type=float, default=1.0)
@@ -596,7 +596,7 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--run")
     report.set_defaults(func=cmd_report)
 
-    detect_parser = sub.add_parser("detect", help="dò test runner trong repo")
+    detect_parser = sub.add_parser("detect", help="detect test runners in the repo")
     detect_parser.add_argument("--repo", default=".")
     detect_parser.add_argument("--json", action="store_true")
     detect_parser.set_defaults(func=cmd_detect)
@@ -604,14 +604,14 @@ def build_parser() -> argparse.ArgumentParser:
     vault_parser = sub.add_parser("vault", help="Hidden test vault (blind evaluation)")
     vault_sub = vault_parser.add_subparsers(dest="vault_command", required=True)
 
-    v_init = vault_sub.add_parser("init", help="tạo vault ngoài repo")
+    v_init = vault_sub.add_parser("init", help="create a vault outside the repo")
     v_init.add_argument("--repo", default=".")
     v_init.add_argument("--id", default=None)
     v_init.add_argument("--vault-dir", default=None)
     v_init.add_argument("--json", action="store_true")
     v_init.set_defaults(func=cmd_vault_init)
 
-    v_add = vault_sub.add_parser("add", help="thêm file test vào suite")
+    v_add = vault_sub.add_parser("add", help="add test files to a suite")
     v_add.add_argument("--vault", required=True)
     v_add.add_argument("--suite", required=True)
     v_add.add_argument("--task", default=None)
@@ -623,20 +623,20 @@ def build_parser() -> argparse.ArgumentParser:
     v_add.add_argument("files", nargs="+")
     v_add.set_defaults(func=cmd_vault_add)
 
-    v_list = vault_sub.add_parser("list", help="liệt kê suite trong vault")
+    v_list = vault_sub.add_parser("list", help="list suites in the vault")
     v_list.add_argument("--vault", required=True)
     v_list.add_argument("--vault-dir", default=None)
     v_list.add_argument("--json", action="store_true")
     v_list.set_defaults(func=cmd_vault_list)
 
-    v_rm = vault_sub.add_parser("rm", help="xoá suite khỏi vault")
+    v_rm = vault_sub.add_parser("rm", help="remove a suite from the vault")
     v_rm.add_argument("--vault", required=True)
     v_rm.add_argument("--suite", required=True)
     v_rm.add_argument("--yes", action="store_true")
     v_rm.add_argument("--vault-dir", default=None)
     v_rm.set_defaults(func=cmd_vault_rm)
 
-    v_val = vault_sub.add_parser("validate", help="thẩm định đề trên baseline")
+    v_val = vault_sub.add_parser("validate", help="validate the suite on the baseline")
     v_val.add_argument("--vault", required=True)
     v_val.add_argument("--repo", default=".")
     v_val.add_argument("--suite", default=None)
@@ -645,30 +645,30 @@ def build_parser() -> argparse.ArgumentParser:
     v_val.add_argument("--json", action="store_true")
     v_val.set_defaults(func=cmd_vault_validate)
 
-    doctor = sub.add_parser("doctor", help="kiểm tra môi trường và adapter tier")
+    doctor = sub.add_parser("doctor", help="check the environment and adapter tier")
     doctor.add_argument("--json", action="store_true")
-    doctor.add_argument("--inject-test", action="store_true", help="tự test bơm phím qua PTY")
+    doctor.add_argument("--inject-test", action="store_true", help="self-test PTY keystroke injection")
     doctor.set_defaults(func=cmd_doctor)
 
-    dash = sub.add_parser("dashboard", help="dashboard HTML (static hoặc live)")
+    dash = sub.add_parser("dashboard", help="HTML dashboard (static or live)")
     dash.add_argument("--repo", default=".")
     dash.add_argument("--run")
-    dash.add_argument("--out", default=None, help="ghi file HTML tĩnh")
+    dash.add_argument("--out", default=None, help="write a static HTML file")
     dash.add_argument("--host", default="127.0.0.1")
     dash.add_argument("--port", type=int, default=47822)
     dash.add_argument("--open", dest="open_browser", action="store_true")
     dash.set_defaults(func=cmd_dashboard)
 
-    skill = sub.add_parser("install-skill", help="cài skill cho chatbox CLI")
+    skill = sub.add_parser("install-skill", help="install the skill for a chat CLI")
     skill.add_argument("--for", dest="provider", choices=list(PROVIDERS), required=True)
     skill.add_argument("--dir", default=".")
     skill.add_argument("--global", dest="global_", action="store_true")
     skill.set_defaults(func=cmd_install_skill)
 
-    setup = sub.add_parser("setup", help="dò CLI đã cài và cài skill (một lệnh)")
+    setup = sub.add_parser("setup", help="detect installed CLIs and install the skill (one command)")
     setup.add_argument("--for", dest="providers", action="append", choices=list(PROVIDERS))
     setup.add_argument("--dir", default=".")
-    setup.add_argument("--local", action="store_true", help="cài vào repo hiện tại thay vì home")
+    setup.add_argument("--local", action="store_true", help="install into the current repo instead of home")
     setup.add_argument("--dry-run", action="store_true")
     setup.set_defaults(func=cmd_setup)
 
@@ -690,10 +690,10 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 1
     except (ValueError, FileExistsError) as exc:
-        print(f"lỗi: {exc}", file=sys.stderr)
+        print(f"error: {exc}", file=sys.stderr)
         return 1
     except RuntimeError as exc:
-        print(f"lỗi: {exc}", file=sys.stderr)
+        print(f"error: {exc}", file=sys.stderr)
         return 1
 
 

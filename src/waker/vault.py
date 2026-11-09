@@ -80,10 +80,10 @@ class Vault:
     ) -> "Vault":
         vault_id = vault_id or new_vault_id()
         if not VAULT_ID_RE.match(vault_id):
-            raise ValueError("vault_id phải là 12 ký tự hex thường")
+            raise ValueError("vault_id must be 12 lowercase hex characters")
         path = vault_root(str(base_dir) if base_dir else None) / vault_id
         if path.exists():
-            raise FileExistsError(f"vault {vault_id} đã tồn tại: {path}")
+            raise FileExistsError(f"vault {vault_id} already exists: {path}")
         (path / "suites").mkdir(parents=True, exist_ok=False)
         if os.name != "nt":
             try:
@@ -107,7 +107,7 @@ class Vault:
         path = vault_root(str(base_dir) if base_dir else None) / vault_id
         manifest_path = path / "manifest.json"
         if not manifest_path.exists():
-            raise FileNotFoundError(f"vault {vault_id} không tồn tại: {path}")
+            raise FileNotFoundError(f"vault {vault_id} does not exist: {path}")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if manifest.get("vault_id") != vault_id:
             raise ValueError("manifest vault_id mismatch")
@@ -145,7 +145,7 @@ class Vault:
         for file_name in files:
             source = Path(file_name).expanduser().resolve()
             if not source.is_file():
-                raise FileNotFoundError(f"không tìm thấy file: {source}")
+                raise FileNotFoundError(f"file not found: {source}")
             destination = target / source.name
             shutil.copyfile(source, destination)
             existing[source.name] = {

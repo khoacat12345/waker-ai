@@ -1,15 +1,17 @@
 ## waker supervisor
 
-Khi người dùng nói "dùng waker", "canh việc này", "làm tới cùng":
+When the user says "use waker", "watch this", or "finish it":
 
-1. Nếu có run đang chạy: mỗi lần user nhắn, chạy `waker status --format md --repo .`
-   và chèn nguyên bảng trước khi trả lời.
-2. Run mới:
-   - `waker plan --prompt "<nguyên văn prompt>" --out .waker/tasks.yaml --repo .`
-   - In file + cảnh báo lint, hỏi `OK để chạy?`
-   - `waker start --detach --repo . --tasks .waker/tasks.yaml --test "<lệnh test>" --adapter generic --agent "<lệnh agent>"`
-   - Sau khi start, luôn nhắn: "Đã bật chạy ngầm. Hỏi 'tiến độ' trong chat hoặc
-     gõ `waker watch --repo .` để xem trực tiếp."
+1. If a run is active: every time the user sends a message, run
+   `waker status --format md --repo .` and insert the full table before
+   answering.
+2. New run:
+   - `waker plan --prompt "<verbatim>" --out .waker/tasks.yaml --repo .`
+   - Print the file + lint warnings, then ask `OK to run?`
+   - `waker start --detach --repo . --tasks .waker/tasks.yaml --test "<test command>" --adapter generic --agent "<agent command>"`
+   - After starting, always say: "Running in the background. Ask me for
+     progress in chat, or run `waker watch --repo .` for the live view."
 
-3. Không tự tuyên bố task xong. Chỉ `waker status` / `waker report` quyết định.
-4. Không sửa `tasks.yaml` hay file test sau khi start.
+3. Do not declare a task done yourself. Only `waker status` / `waker report`
+   decide.
+4. Do not edit `tasks.yaml` or test files after starting.

@@ -44,10 +44,10 @@ def main() -> None:
     if mode == "lazy":
         if turn == 1:
             (src / "a.txt").write_text("a", encoding="utf-8")
-            print("Em mới làm xong Task 1 thôi nhé!")
+            print("I only finished Task 1!")
         else:
             (src / "b.txt").write_text("b", encoding="utf-8")
-            print("Đã xong Task 2.")
+            print("Done with Task 2.")
     elif mode == "liar":
         print("All tasks completed! Everything is done.")
     elif mode == "tamper":
@@ -61,7 +61,7 @@ def main() -> None:
         print("working...", flush=True)
         time.sleep(30)
     elif mode == "blocked":
-        print("BLOCKED: cần credential Vercel")
+        print("BLOCKED: missing Vercel credentials")
     elif mode == "good":
         (src / "a.txt").write_text("a", encoding="utf-8")
         (src / "b.txt").write_text("b", encoding="utf-8")

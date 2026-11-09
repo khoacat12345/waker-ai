@@ -64,7 +64,7 @@ def validate_suite(
 ) -> ValidationResult:
     entry = vault.suites.get(suite)
     if not entry:
-        return ValidationResult(suite, False, messages=["suite không tồn tại"])
+        return ValidationResult(suite, False, messages=["suite does not exist"])
 
     result = ValidationResult(
         suite=suite,
@@ -75,7 +75,7 @@ def validate_suite(
     source = _suite_source(vault, suite)
     for marker in SKIP_MARKERS:
         if marker in source:
-            result.messages.append(f"đề chứa skip/xfail: {marker}")
+            result.messages.append(f"suite contains skip/xfail: {marker}")
             return result
 
     outcomes: list[SuiteRun] = []
@@ -89,11 +89,11 @@ def validate_suite(
         )
         outcomes.append(outcome)
         if outcome.timed_out:
-            result.messages.append("đề chạy quá timeout")
+            result.messages.append("suite timed out")
             result.runs = outcomes
             return result
         if outcome.exit_code == 5:
-            result.messages.append("đề không có test nào")
+            result.messages.append("suite has no tests")
             result.runs = outcomes
             return result
         if outcome.exit_code in (2, 3, 4):
@@ -103,33 +103,33 @@ def validate_suite(
             result.runs = outcomes
             return result
         if not outcome.nodeids and not outcome.failures:
-            result.messages.append("đề không có test nào")
+            result.messages.append("suite has no tests")
             result.runs = outcomes
             return result
         if outcome.suspect and result.baseline == "red":
-            result.messages.append("đề fail vì import/attribute/collection error")
+            result.messages.append("suite failed due to an import/attribute/collection error")
             result.runs = outcomes
             return result
 
     result.runs = outcomes
     result.tests = max((len(outcome.nodeids) for outcome in outcomes), default=0)
     if result.tests == 0:
-        result.messages.append("đề không có test nào")
+        result.messages.append("suite has no tests")
         return result
 
     red_results = [outcome.exit_code != 0 for outcome in outcomes]
     if result.baseline == "red":
         if not all(red_results):
-            result.messages.append("đề pass trên baseline (không chứng minh được gì)")
+            result.messages.append("suite passes on baseline (proves nothing)")
             return result
     else:
         if any(red_results):
-            result.messages.append("đề fail trên baseline (baseline: green)")
+            result.messages.append("suite fails on baseline (baseline: green)")
             return result
 
     if len(set(red_results)) > 1:
         result.flaky = True
-        result.messages.append("đề flaky: kết quả 2 lần chạy khác nhau")
+        result.messages.append("suite is flaky: two runs produced different results")
         return result
 
     failure_sets = {
@@ -137,7 +137,7 @@ def validate_suite(
     }
     if len(failure_sets) > 1:
         result.flaky = True
-        result.messages.append("đề flaky: tập failure khác nhau giữa 2 lần chạy")
+        result.messages.append("suite is flaky: failure sets differ between two runs")
         return result
 
     result.ok = True

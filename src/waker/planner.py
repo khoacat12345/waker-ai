@@ -221,7 +221,7 @@ def parse_prompt(prompt: str) -> PlanBundle:
                 Question(
                     id=f"Q{question_index}",
                     kind=kind,
-                    text=f"Cần làm rõ: {desc}",
+                    text=f"Needs clarification: {desc}",
                     options=[],
                 )
             )
@@ -416,44 +416,44 @@ def lint_tasks(tasks: list[Task], repo: str | Path | None = None) -> list[LintIs
 
     for task in tasks:
         if task.id in seen:
-            issues.append(LintIssue("error", task.id, "id bị trùng"))
+            issues.append(LintIssue("error", task.id, "duplicate id"))
         seen[task.id] = task
 
         if task.kind == "work":
             if not task.scope:
                 issues.append(
-                    LintIssue("error", task.id, "thiếu `scope` (không biết file nào thuộc task)")
+                    LintIssue("error", task.id, "missing `scope` (cannot tell which files belong to this task)")
                 )
             if not task.verify:
                 issues.append(
-                    LintIssue("error", task.id, "thiếu `verify` (không có lệnh chứng minh xong)")
+                    LintIssue("error", task.id, "missing `verify` (no command to prove completion)")
                 )
         else:
             if not task.command:
                 issues.append(
-                    LintIssue("error", task.id, "constraint thiếu `check` hoặc `verify`")
+                    LintIssue("error", task.id, "constraint is missing `check` or `verify`")
                 )
 
         if task.blind:
             if not isinstance(task.blind, dict):
-                issues.append(LintIssue("error", task.id, "`blind` phải là mapping"))
+                issues.append(LintIssue("error", task.id, "`blind` must be a mapping"))
             else:
                 if not task.blind.get("suite"):
-                    issues.append(LintIssue("error", task.id, "`blind.suite` bị thiếu"))
+                    issues.append(LintIssue("error", task.id, "`blind.suite` is missing"))
                 if task.blind.get("baseline", "red") not in ("red", "green"):
                     issues.append(
-                        LintIssue("error", task.id, "`blind.baseline` phải là red|green")
+                        LintIssue("error", task.id, "`blind.baseline` must be red|green")
                     )
                 if task.blind.get("leak", "message") not in ("minimal", "message"):
                     issues.append(
-                        LintIssue("error", task.id, "`blind.leak` phải là minimal|message")
+                        LintIssue("error", task.id, "`blind.leak` must be minimal|message")
                     )
                 if not task.verify:
                     issues.append(
                         LintIssue(
                             "error",
                             task.id,
-                            "task blind cần `verify` public smoke",
+                            "blind task needs a public `verify` smoke test",
                         )
                     )
 
@@ -464,7 +464,7 @@ def lint_tasks(tasks: list[Task], repo: str | Path | None = None) -> list[LintIs
                     LintIssue(
                         "error",
                         task.id,
-                        f"verify quá yếu (`{command}`) - không kiểm tra gì cả",
+                        f"verify is too weak (`{command}`) - it checks nothing",
                     )
                 )
             if repo_files is not None and "python -c" not in command:
@@ -476,7 +476,7 @@ def lint_tasks(tasks: list[Task], repo: str | Path | None = None) -> list[LintIs
                             LintIssue(
                                 "warning",
                                 task.id,
-                                "không tìm thấy file test nào trong repo",
+                                "no test files found in the repo",
                             )
                         )
 
@@ -495,7 +495,7 @@ def lint_tasks(tasks: list[Task], repo: str | Path | None = None) -> list[LintIs
                         LintIssue(
                             "warning",
                             task.id,
-                            f"scope không match file nào hiện có: {checkable}",
+                            f"scope matches no existing files: {checkable}",
                         )
                     )
 
@@ -509,7 +509,7 @@ def lint_tasks(tasks: list[Task], repo: str | Path | None = None) -> list[LintIs
                             LintIssue(
                                 "error",
                                 left.id,
-                                f"scope trùng với {right.id} (`{a}` ~ `{b}`) - không thể quy diff về task nào",
+                                f"scope overlaps with {right.id} (`{a}` ~ `{b}`) - cannot attribute the diff to a task",
                             )
                         )
     return issues
@@ -521,7 +521,7 @@ def has_errors(issues: list[LintIssue]) -> bool:
 
 def format_issues(issues: list[LintIssue]) -> str:
     if not issues:
-        return "OK: contract hợp lệ"
+        return "OK: contract is valid"
     return "\n".join(repr(issue) for issue in issues)
 
 
@@ -534,5 +534,5 @@ def load_contract(path: str | Path | None, prompt: str | None = None) -> PlanBun
             constraints=[t for t in tasks if t.kind != "work"],
         )
     if prompt is None:
-        raise ValueError("cần --tasks hoặc --prompt")
+        raise ValueError("requires --tasks or --prompt")
     return parse_prompt(prompt)

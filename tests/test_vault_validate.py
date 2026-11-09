@@ -37,7 +37,7 @@ def test_green_suite_is_rejected(tmp_path: Path):
 
     result = validate_suite(vault, "auth", repo)
     assert result.ok is False
-    assert any("pass trên baseline" in message for message in result.messages)
+    assert any("passes on baseline" in message for message in result.messages)
 
 
 def test_import_error_is_rejected(tmp_path: Path):
@@ -84,7 +84,7 @@ def test_empty_suite_is_rejected(tmp_path: Path):
 
     result = validate_suite(vault, "auth", repo)
     assert result.ok is False
-    assert any("không có test" in message for message in result.messages)
+    assert any("no tests" in message for message in result.messages)
 
 
 def test_validate_vault_marks_manifest(tmp_path: Path):

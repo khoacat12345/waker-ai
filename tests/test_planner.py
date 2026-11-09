@@ -65,7 +65,7 @@ def test_lint_flags_missing_scope_and_verify():
 
 def test_lint_flags_trivial_verify():
     issues = planner.lint_tasks([Task(id="T1", desc="x", scope=["src/**"], verify="true")])
-    assert any("quá yếu" in issue.message for issue in issues)
+    assert any("too weak" in issue.message for issue in issues)
 
 
 def test_lint_flags_duplicate_ids():
@@ -75,7 +75,7 @@ def test_lint_flags_duplicate_ids():
             Task(id="T1", desc="b", scope=["src/b/**"], verify="pytest b"),
         ]
     )
-    assert any("trùng" in issue.message for issue in issues)
+    assert any("duplicate id" in issue.message for issue in issues)
 
 
 def test_lint_flags_overlapping_scopes():
@@ -85,14 +85,14 @@ def test_lint_flags_overlapping_scopes():
             Task(id="T2", desc="b", scope=["src/pay/**"], verify="pytest b"),
         ]
     )
-    assert any("không thể quy diff" in issue.message for issue in issues)
+    assert any("cannot attribute the diff" in issue.message for issue in issues)
 
 
 def test_lint_does_not_warn_for_new_concrete_file(repo):
     issues = planner.lint_tasks(
         [Task(id="T1", desc="x", scope=["src/new.txt"], verify="pytest -q")], repo=repo
     )
-    assert not any("không match" in issue.message for issue in issues)
+    assert not any("matches no existing" in issue.message for issue in issues)
 
 
 def test_plan_markdown_format_is_parsed():
@@ -163,4 +163,4 @@ def test_lint_rejects_blind_without_verify():
         ]
     )
     assert planner.has_errors(issues)
-    assert any("public smoke" in issue.message for issue in issues)
+    assert any("smoke" in issue.message for issue in issues)

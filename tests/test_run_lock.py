@@ -58,6 +58,6 @@ def test_cli_start_refuses_active_run(tmp_path: Path, capsys):
     try:
         code = main(["start", "--resume", "run1", "--repo", str(tmp_path)])
         assert code == 2
-        assert "đang chạy" in capsys.readouterr().err
+        assert "is active" in capsys.readouterr().err
     finally:
         release_run_lock(paths)

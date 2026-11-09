@@ -1,88 +1,91 @@
 ---
 name: waker
-description: Supervise a long coding task until every checklist item has on-disk evidence and tests pass. Use when the user says "dùng waker", "canh việc này", "làm tới cùng", or asks whether the agent is still working.
+description: Supervise a long coding task until every checklist item has on-disk evidence and tests pass. Use when the user says "use waker", "watch this", "finish it", or asks whether the agent is still working.
 ---
 
 # waker — supervisor
 
-Bạn **không được** tự tuyên bố task xong. Chỉ daemon quyết định, dựa trên
-`git diff ∩ scope` và `verify` exit code. Lời của bạn không phải bằng chứng.
+You must **not** declare a task done yourself. Only the daemon decides, based on
+`git diff ∩ scope` and `verify` exit codes. Your words are not evidence.
 
-## Nếu đã có run đang chạy
+## If a run is already active
 
-Mỗi lần user nhắn (kể cả không hỏi tiến độ), trước khi trả lời:
+Every time the user sends a message (even if they do not ask for progress),
+before answering:
 
-1. Chạy `waker status --format md --repo .`
-2. Chèn **nguyên bảng** vào đầu câu trả lời.
-3. Nếu status là `running`: không suy đoán, không hứa hẹn thay daemon.
-4. Nếu status khác `running`: đọc `waker report --repo .` và tóm tắt đúng số liệu
-   (task done/total, test, số kick, cost).
+1. Run `waker status --format md --repo .`
+2. Insert the **full table** at the top of your answer.
+3. If status is `running`: do not speculate or promise on the daemon's behalf.
+4. If status is not `running`: read `waker report --repo .` and summarize the
+   exact numbers (tasks done/total, tests, kicks, cost).
 
-## Bắt đầu run mới
+## Start a new run
 
-1. **Xác định repo đích.** Nếu prompt nhắc path không có trong repo hiện tại
-   (ví dụ `.agents/v2/...` khi đang ở `waker-ai`), hỏi user repo đích trước khi
-   plan. Không đoán.
-2. Lấy **nguyên văn** prompt của user (bỏ tiền tố `@waker` nếu có). Không tóm
-   tắt, không diễn giải.
-3. `waker plan --prompt "<nguyên văn>" --out .waker/tasks.yaml --repo <repo đích>`
-4. Đọc kết quả lint:
-   - **Nếu có ERROR** (thiếu scope/verify, trùng scope, verify rỗng):
-     **KHÔNG hỏi "OK để chạy".** Trình bày lỗi và đề xuất đúng 2 lựa chọn:
-     a) `waker plan --via opencode --model <model> --prompt "<nguyên văn>" --repo <repo>`
-        để một turn model điền scope/verify, rồi lint lại;
-     b) user gộp/sửa task thủ công.
-   - Chỉ đi tiếp khi lint **0 error**.
-5. Khi lint sạch: in `.waker/tasks.yaml` + cảnh báo (nếu có), rồi hỏi đúng một
-   câu: `OK để chạy? (ok / sửa)`.
-6. Khi user đồng ý, chạy:
+1. **Identify the target repo.** If the prompt mentions a path that is not in
+   the current repo (for example `.agents/v2/...` while in `waker-ai`), ask the
+   user for the target repo before planning. Do not guess.
+2. Take the user's prompt **verbatim** (drop a leading `@waker` if present).
+   Do not summarize or reinterpret.
+3. `waker plan --prompt "<verbatim>" --out .waker/tasks.yaml --repo <target repo>`
+4. Read the lint result:
+   - **If there is an ERROR** (missing scope/verify, duplicate scope, empty
+     verify): **DO NOT ask "OK to run".** Show the errors and offer exactly two
+     options:
+     a) `waker plan --via opencode --model <model> --prompt "<verbatim>" --repo <repo>`
+        to let a model fill scope/verify, then lint again;
+     b) the user merges/fixes tasks manually.
+   - Continue only when lint has **0 errors**.
+5. When lint is clean: print `.waker/tasks.yaml` + any warnings, then ask
+   exactly one question: `OK to run? (ok / edit)`.
+6. When the user agrees, run:
 
 ```bash
 waker start --detach --repo . --tasks .waker/tasks.yaml \
-  --test "<lệnh test của repo>" \
+  --test "<repo test command>" \
   --adapter opencode --model <provider/model> [--max-kicks 5] [--max-cost 1.0]
 ```
 
-Nếu không phải OpenCode, dùng adapter generic:
+If not OpenCode, use the generic adapter:
 
 ```bash
 waker start --detach --repo . --tasks .waker/tasks.yaml \
-  --test "<lệnh test>" --adapter generic \
+  --test "<test command>" --adapter generic \
   --agent "claude -p --resume {session} {prompt}"
 ```
 
-7. Trả lời ngay, không im lặng: "Đã bật chạy ngầm. Bạn có thể hỏi mình
-   'tiến độ' ngay trong chat, hoặc mở terminal gõ `waker watch --repo .`
-   để xem trực tiếp."
+7. Answer immediately, do not go silent: "Running in the background. You can
+   ask me for progress in chat, or open a terminal and run
+   `waker watch --repo .` for the live view."
 
-> Prompt kiểu "lệnh thực thi" (phê duyệt, quyết định, đánh số từng dòng) thường
-> không phải task. Dùng `--via opencode` để gộp thành 3–6 task có scope/verify,
-> thay vì biến mỗi dòng thành một task rỗng.
+> Prompts that look like an instruction (approval, decision, numbered lines)
+> are usually not tasks. Use `--via opencode` to group them into 3–6 tasks with
+> scope/verify instead of turning each line into an empty task.
 
-## Dừng
+## Stop
 
 `waker stop --repo .`
 
 ## Blind evaluation (Kaggle mode)
 
-Khi user nói "chấm mù", "hidden test", "Kaggle mode":
+When the user says "blind grading", "hidden test", or "Kaggle mode":
 
-1. Viết hidden tests ra file riêng, **không** đặt trong repo làm việc.
-2. `waker vault init --repo .` → lấy `vault_id`.
+1. Write hidden tests to separate files, **not** in the working repo.
+2. `waker vault init --repo .` → get `vault_id`.
 3. `waker vault add --vault <id> --suite <name> --task T1 <file>`
-4. `waker vault validate --vault <id> --repo .` — nếu FAIL, sửa đề rồi chạy lại;
-   **không** start khi đề chưa validate.
+4. `waker vault validate --vault <id> --repo .` — if FAIL, fix the suite and
+   rerun; **do not** start until the suite validates.
 5. Start: `waker start --detach --vault <id> --tasks .waker/tasks.yaml ...`
-6. Khi báo tiến độ: chỉ đọc `hidden x/y` trong `waker status --format md`.
-   Không đoán, không in tên test, không in source.
-7. **Tuyệt đối** không dán nội dung hidden test vào chat của worker;
-   không đưa vault path vào prompt.
+6. When reporting progress: only read `hidden x/y` from
+   `waker status --format md`. Do not guess, do not print test names, do not
+   print source.
+7. **Never** paste hidden test content into the worker chat; do not put the
+   vault path in the prompt.
 
-## Quy tắc cứng
+## Hard rules
 
-- Lint còn ERROR thì **không được start** và **không được hỏi "OK để chạy"**.
-- Không sửa `tasks.yaml` sau khi đã start (hash sẽ báo TAMPER).
-- Không sửa file test. Muốn đổi test thì dừng run, sửa, chạy lại.
-- Không nói "xong" — chỉ đọc `status`/`report`.
-- Nếu người dùng hỏi "còn thiếu gì", trả lời bằng danh sách task `status != done`
-  trong JSON của `waker status --format json`, không tự đoán.
+- If lint has an ERROR, **do not start** and **do not ask "OK to run"**.
+- Do not edit `tasks.yaml` after starting (the hash will report TAMPER).
+- Do not edit test files. To change tests, stop the run, edit, and restart.
+- Do not say "done" — only read `status`/`report`.
+- If the user asks "what is missing", answer from the task list with
+  `status != done` in `waker status --format json`; do not guess.

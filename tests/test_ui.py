@@ -57,6 +57,9 @@ def test_markdown_contains_evidence_and_gate():
     assert "src/auth/guard.py" in text
     assert "test_pay.py:31 KeyError" in text
     assert "tests/test_pay.py::test_refund" in text
+    assert "|   | Task | Work | Evidence | Gate |" in text
+    assert "Bằng chứng" not in text
+    assert "chẩn đoán" not in text
 
 
 def test_progress_ignores_constraints():

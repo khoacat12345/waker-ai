@@ -7,11 +7,15 @@ All notable changes to `waker-ai`.
 ### Changed
 
 - `waker setup` now prints the live progress hint: `waker watch` (terminal) or
-  ask "tiến độ" in chat. `waker start` prints the same live-view command.
+  ask "progress" in chat. `waker start` prints the same live-view command.
 - Skill templates (OpenCode / Claude / Gemini / generic) now require the agent
-  to say after starting a run: "Đã bật chạy ngầm. Hỏi 'tiến độ' trong chat hoặc
-  gõ `waker watch --repo .` để xem trực tiếp." While a run is active, the agent
-  runs `waker status --format md` and pastes the table on every user message.
+  to say after starting a run: "Running in the background. Ask me for progress
+  in chat, or run `waker watch --repo .` for the live view." While a run is
+  active, the agent runs `waker status --format md` and pastes the table on
+  every user message.
+- English is now the default for all user-facing output: CLI help/messages,
+  `waker watch` / `status` / `report`, kick/initial prompts, vault/lint/doctor
+  output, and skill templates. Vietnamese input parsing remains supported.
 
 ## v1.1.2 — 2026-11-08
 
@@ -115,7 +119,7 @@ All notable changes to `waker-ai`.
 
 ### Fixed
 
-- **Skill UX**: never asks "OK để chạy?" when lint has errors. It now shows the
+- **Skill UX**: never asks "OK to run?" when lint has errors. It now shows the
   errors and offers `--via opencode` or a manual merge.
 - **Skill repo guard**: asks for the target repo when prompt paths do not exist
   in the current repo (e.g. `.agents/...` while inside `waker-ai`).

@@ -313,7 +313,7 @@ class Engine:
             state.test_command,
             state.kicks,
             state.max_kicks,
-            notes=["Run khôi phục sau khi bị gián đoạn. Tiếp tục từ chỗ còn thiếu."],
+            notes=["Run resumed after interruption. Continue from what is missing."],
         )
         engine.events.append(
             "resume",
@@ -333,7 +333,7 @@ class Engine:
         if not cfg.vault_id:
             if blind_tasks:
                 raise RuntimeError(
-                    "task có `blind` nhưng thiếu `--vault <id>` (fail closed)"
+                    "task has `blind` but no `--vault <id>` (fail closed)"
                 )
             return
 
@@ -341,22 +341,22 @@ class Engine:
         manifest_repo = vault.manifest.get("repo")
         if manifest_repo and Path(manifest_repo).resolve() != self.repo:
             raise RuntimeError(
-                f"vault {vault.vault_id} thuộc {manifest_repo}, không phải {self.repo}"
+                f"vault {vault.vault_id} belongs to {manifest_repo}, not {self.repo}"
             )
 
         suites: list[str] = []
         for task in blind_tasks:
             suite = str((task.blind or {}).get("suite") or task.id)
             if suite not in vault.suites:
-                raise RuntimeError(f"suite `{suite}` không có trong vault")
+                raise RuntimeError(f"suite `{suite}` is not in the vault")
             entry = vault.suites[suite]
             if not entry.get("validated_at"):
                 if not validate_missing:
-                    raise RuntimeError(f"suite `{suite}` chưa được validate")
+                    raise RuntimeError(f"suite `{suite}` has not been validated")
                 results = validate_vault(vault, self.repo, suite=suite, runs=2)
                 if not results[0].ok:
                     raise RuntimeError(
-                        f"suite `{suite}` không hợp lệ: {results[0].messages}"
+                        f"suite `{suite}` is invalid: {results[0].messages}"
                     )
             suites.append(suite)
 
@@ -828,7 +828,7 @@ class Engine:
 
         ledger = read_json(self.paths.ledger)
         report = render_markdown(state, ledger)
-        report += "\n\n## Lịch sử kick\n"
+        report += "\n\n## Kick history\n"
         for line in self.events.path.read_text(encoding="utf-8").splitlines():
             try:
                 record = json.loads(line)
@@ -836,7 +836,7 @@ class Engine:
                 continue
             if record.get("t") == "diagnose":
                 report += f"- kick {record.get('kick')}: **{record.get('label')}**\n"
-        report += f"\n_Ghi lúc {utcnow()}_\n"
+        report += f"\n_Recorded at {utcnow()}_\n"
         self.paths.report.write_text(report, encoding="utf-8", errors="replace")
         release_run_lock(self.paths)
 
@@ -866,21 +866,21 @@ class Engine:
     def _notes(diag: Diagnosis, obs: Observation) -> list[str]:
         notes: list[str] = []
         if diag is Diagnosis.TAMPER:
-            notes.append("Bạn vừa sửa file test. Waker đã khôi phục bản gốc. Không được sửa test.")
+            notes.append("You modified test files. Waker restored the baseline. Do not edit tests.")
         if diag is Diagnosis.THRASH:
-            notes.append("Hai lần đánh thức liên tiếp không có tiến bộ nào. Đổi cách làm.")
+            notes.append("Two consecutive wake-ups made no progress. Change your approach.")
         if diag is Diagnosis.HIDDEN_FAIL:
-            notes.append("Hidden tests đang đỏ. Sửa đúng hành vi, không đoán đề.")
+            notes.append("Hidden tests are red. Fix the behavior; do not guess the tests.")
         if diag is Diagnosis.VAULT_TAMPER:
-            notes.append("Vault hash đã đổi. Dừng để bảo vệ đề thi.")
+            notes.append("Vault hash changed. Stopping to protect the exam.")
         if diag is Diagnosis.FALSE_DONE:
-            notes.append("Bạn báo xong nhưng gate vẫn đỏ. Chỉ báo xong khi test xanh thật.")
+            notes.append("You claimed done but the gate is still red. Only claim done when tests are actually green.")
         if diag is Diagnosis.BREAKER and obs.max_cost_usd > 0 and obs.cost_usd >= obs.max_cost_usd:
             notes.append(
-                f"Đã chạm hạn mức chi phí (${obs.cost_usd:.4f} / ${obs.max_cost_usd:.4f}). Dừng."
+                f"Cost limit reached (${obs.cost_usd:.4f} / ${obs.max_cost_usd:.4f}). Stopping."
             )
         if obs.unscoped_changes:
             notes.append(
-                "Thay đổi ngoài hợp đồng: " + ", ".join(obs.unscoped_changes[:5])
+                "Changes outside the contract: " + ", ".join(obs.unscoped_changes[:5])
             )
         return notes

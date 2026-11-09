@@ -19,7 +19,7 @@ def test_install_skill_for_each_provider(tmp_path: Path):
         text = target.read_text(encoding="utf-8")
         assert "waker" in text.lower()
         assert "waker watch" in text
-        assert "chạy ngầm" in text
+        assert "Running in the background" in text
 
 
 def test_generic_install_is_idempotent(tmp_path: Path):

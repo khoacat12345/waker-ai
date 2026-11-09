@@ -64,3 +64,24 @@
   - [ ] Có test case xác minh trong `tests/test_lint.py`.
   - [ ] `pytest` toàn bộ suite xanh.
 - **Files:** `src/waker/planner.py`, `tests/test_lint.py`.
+
+## P-003 — English localization by default (CLI, TUI watch, kick prompts)
+
+- **Status:** done on `main` (2026-11-09); pending release.
+- **Priority:** High — required for international users on PyPI/Agensi.
+- **Target:** v1.1.3 (pending release approval).
+- **Problem:** User-facing strings were hardcoded in Vietnamese in `src/waker`
+  (CLI help/output, `waker watch`, `waker status/report`, kick prompts, vault
+  and lint messages) and in the installed skill templates.
+- **Scope:** All user-facing output and skill templates must be English by
+  default. Keep Vietnamese **input parsing** (`planner.py` markers,
+  `evidence.py` claim phrases) so Vietnamese prompts still work.
+- **Acceptance:**
+  - [x] CLI help/output English.
+  - [x] `waker watch` / `status` / `report` English.
+  - [x] Kick / initial prompts English.
+  - [x] Vault / lint / doctor / detect messages English.
+  - [x] Skill templates (opencode/claude/gemini/generic) English.
+  - [x] No Vietnamese user-facing strings in `src/waker` (parser keywords excepted).
+  - [x] Tests updated; `pytest` green.
+- **Files:** `src/waker/*`, `src/waker/skill_templates/*`, `tests/*`.

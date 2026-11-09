@@ -47,7 +47,7 @@ def _task_rows(state: RunState, ledger: dict[str, Any]) -> list[list[str]]:
             if len(files) > 2:
                 shown += f" (+{len(files) - 2})"
         else:
-            shown = "\u2014 chưa có diff"
+            shown = "\u2014 no diff yet"
         gate = evidence.get("gate") or ("\u2014" if status == "pending" else status)
         if evidence.get("message") and status != "done":
             gate = f"{gate} \u00b7 {evidence['message']}"
@@ -89,7 +89,7 @@ def render_markdown(state: RunState, ledger: dict[str, Any]) -> str:
             for name, record in hidden.items()
         )
         lines.append(f"hidden: {summary}")
-    lines.extend(["", "|   | Task | Việc | Bằng chứng | Cổng |",
+    lines.extend(["", "|   | Task | Work | Evidence | Gate |",
                   "|---|------|------|-----------|------|"])
     for icon, task_id, desc, evidence, gate in _task_rows(state, ledger):
         lines.append(f"| {icon} | {task_id} | {desc} | {evidence} | {gate} |")
@@ -97,12 +97,12 @@ def render_markdown(state: RunState, ledger: dict[str, Any]) -> str:
     failures = test.get("failed") or []
     if failures:
         lines.append("")
-        lines.append("Lỗi test gần nhất:")
+        lines.append("Latest test failures:")
         for failure in failures[:5]:
             lines.append(f"- {failure}")
     if state.diagnosis:
         lines.append("")
-        lines.append(f"Chẩn đoán cuối: **{state.diagnosis}** \u00b7 trạng thái: `{state.status}`")
+        lines.append(f"Final diagnosis: **{state.diagnosis}** \u00b7 status: `{state.status}`")
     return "\n".join(lines)
 
 
@@ -128,9 +128,9 @@ def build_rich(state: RunState, ledger: dict[str, Any]):
     table = Table(box=box.SIMPLE_HEAD, expand=True)
     table.add_column("", width=2)
     table.add_column("Task", width=6)
-    table.add_column("Việc", overflow="fold")
-    table.add_column("Bằng chứng", overflow="fold")
-    table.add_column("Cổng", width=18)
+    table.add_column("Work", overflow="fold")
+    table.add_column("Evidence", overflow="fold")
+    table.add_column("Gate", width=18)
     for icon, task_id, desc, evidence, gate in _task_rows(state, ledger):
         table.add_row(icon, task_id, desc, evidence, gate)
 
@@ -153,7 +153,7 @@ def build_rich(state: RunState, ledger: dict[str, Any]):
         body.add_row(Text(f"hidden: {summary}", style="cyan"))
     body.add_row(table)
     if state.diagnosis:
-        body.add_row(Text(f"chẩn đoán: {state.diagnosis}", style="yellow"))
+        body.add_row(Text(f"diagnosis: {state.diagnosis}", style="yellow"))
     return Panel(body, title=f"waker \u00b7 run {state.run_id}", border_style="cyan")
 
 
@@ -162,7 +162,7 @@ def load_latest(repo: str | Path) -> tuple[RunState, dict[str, Any], RunPaths]:
 
     run_id = latest_run(repo)
     if not run_id:
-        raise FileNotFoundError("chưa có run nào trong .waker/runs")
+        raise FileNotFoundError("no runs in .waker/runs")
     paths = RunPaths(repo, run_id)
     state = RunState.load(paths.state)
     ledger = read_json(paths.ledger) if paths.ledger.exists() else {"tasks": {}}

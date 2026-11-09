@@ -47,7 +47,7 @@ class SuiteRun:
 def copy_suite(vault: Vault, suite: str) -> Path:
     source = vault.suite_dir(suite)
     if not source.is_dir():
-        raise FileNotFoundError(f"suite {suite} không tồn tại trong vault")
+        raise FileNotFoundError(f"suite {suite} does not exist in the vault")
     temp = Path(tempfile.mkdtemp(prefix="waker-vault-"))
     for item in source.rglob("*"):
         if not item.is_file():

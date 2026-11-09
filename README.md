@@ -87,7 +87,7 @@ waker plan --prompt "Phase 1: auth, scope: src/auth/**, verify: pytest tests/aut
 
 # 1b) vague prompt -> one OpenCode planning turn writes the contract
 waker plan --via opencode --model <provider/model> \
-  --prompt "làm app quản lý chi tiêu, có login, xuất excel"
+  --prompt "build an expense tracker app with login and Excel export"
 
 # 2) validate the contract - fail closed on missing scope/verify
 waker lint --tasks .waker/tasks.yaml

@@ -34,7 +34,7 @@ def test_lint_returns_two_on_errors(tmp_path: Path, repo: Path, capsys):
     bad.write_text("- id: T1\n  desc: x\n", encoding="utf-8")
     code = main(["lint", "--tasks", str(bad), "--repo", str(repo)])
     assert code == 2
-    assert "thiếu" in capsys.readouterr().out
+    assert "missing" in capsys.readouterr().out
 
 
 def _run_good(repo: Path, tasks: list[Task]):
@@ -96,7 +96,7 @@ def test_cli_install_skill(tmp_path: Path, capsys):
     text = target.read_text(encoding="utf-8")
     assert "waker" in text.lower()
     assert "waker watch" in text
-    assert "Đã bật chạy ngầm" in text
+    assert "Running in the background" in text
     capsys.readouterr()
 
 
@@ -106,7 +106,7 @@ def test_cli_setup_explicit_provider(tmp_path: Path, capsys):
     assert (tmp_path / ".opencode" / "skills" / "waker" / "SKILL.md").exists()
     out = capsys.readouterr().out
     assert "waker watch" in out
-    assert "tiến độ" in out
+    assert "progress" in out
 
 
 def test_cli_setup_auto_detects(tmp_path: Path, monkeypatch, capsys):
@@ -254,7 +254,7 @@ def test_cli_plan_warns_on_prose_prompt(tmp_path: Path, repo: Path, capsys):
         ]
     )
     captured = capsys.readouterr()
-    assert "Gợi ý" in captured.err
+    assert "Hint" in captured.err
     assert "--via opencode" in captured.err
 
 
