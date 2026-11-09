@@ -44,3 +44,23 @@
   - [ ] Không ghi file mỗi giây; không flicker.
   - [ ] Test renderer/watch; `pytest` xanh.
 - **Files:** `src/waker/ui.py`, `src/waker/state.py`, `tests/`.
+
+
+## P-002 — `waker lint` chưa chặn task scope chứa file test (`test_globs`), dẫn tới false TAMPER & thrash loop
+
+- **Trạng thái:** backlog (ghi ngày 2026-11-09, phát hiện trong run `b726fae1`)
+- **Mức độ:** Medium / Policy Conflict — dễ làm agent bị kẹt loop và abort run
+- **Hiện tượng:**
+  - Architect giao task có scope chứa file test mới: `scope: [.agents/tests/test_unified_contracts.py, ...]`.
+  - Waker có cơ chế chống sửa test (`test_globs: **/test_*.py`).
+  - Khi agent tạo/sửa file test, Waker phát hiện file test bị đụng chạm nên coi là `TAMPER` và rollback/exclude file test.
+  - Agent bị bối rối, loop 3 lần liên tiếp không ra diff mới (`THRASH`), Waker giật cầu dao `ABORTED`.
+- **Giải pháp:**
+  - `waker lint` (và `waker plan`) phải fail-closed ngay từ đầu nếu bất kỳ task nào khai báo `scope` chứa file khớp với `test_globs`.
+  - Thông báo lỗi rõ ràng:
+    `ERROR: Task {task.id} scope includes test path '{path}'. Waker forbids test modifications during runs (anti-tamper). Author and commit tests before running Waker or use a separate preparation step.`
+- **Acceptance:**
+  - [ ] `waker lint` từ chối hợp đồng có file test trong scope.
+  - [ ] Có test case xác minh trong `tests/test_lint.py`.
+  - [ ] `pytest` toàn bộ suite xanh.
+- **Files:** `src/waker/planner.py`, `tests/test_lint.py`.
