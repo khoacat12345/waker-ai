@@ -67,7 +67,7 @@
 
 ## P-003 — English localization by default (CLI, TUI watch, kick prompts)
 
-- **Status:** done on `main` (2026-11-09); pending release.
+- **Status:** done; released in v1.1.3 (2026-11-10).
 - **Priority:** High — required for international users on PyPI/Agensi.
 - **Target:** v1.1.3 (pending release approval).
 - **Problem:** User-facing strings were hardcoded in Vietnamese in `src/waker`

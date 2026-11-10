@@ -2,7 +2,7 @@
 
 All notable changes to `waker-ai`.
 
-## Unreleased
+## v1.1.3 — 2026-11-10
 
 ### Changed
 
@@ -16,6 +16,10 @@ All notable changes to `waker-ai`.
 - English is now the default for all user-facing output: CLI help/messages,
   `waker watch` / `status` / `report`, kick/initial prompts, vault/lint/doctor
   output, and skill templates. Vietnamese input parsing remains supported.
+
+### Tests
+
+- Full suite green (1 Windows-only skip).
 
 ## v1.1.2 — 2026-11-08
 

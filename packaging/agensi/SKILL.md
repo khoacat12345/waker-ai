@@ -1,7 +1,7 @@
 ---
 name: waker
 description: Supervise a long coding task with an external watchdog until every task has on-disk evidence and tests pass. Supports blind hidden-test grading.
-version: 1.1.2
+version: 1.1.3
 author: khoacat12345
 license: MIT
 homepage: https://github.com/khoacat12345/waker-ai
