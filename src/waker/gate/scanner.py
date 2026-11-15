@@ -11,10 +11,13 @@ from pathlib import Path
 from .. import evidence, globs, winproc
 from .baseline import baseline_path, load_baseline
 from .config import AntiSlopConfig
+from .graph import build_graph
 from .model import Finding, ScanResult, badge_markdown, grade_for, score_findings
+from .rules.architecture import architecture_findings
 from .rules.common import make_finding
 from .rules.comments import comment_findings
 from .rules.complexity import complexity_findings
+from .rules.dead_code import dead_code_findings
 from .rules.duplicates import (
     Block,
     collect_blocks,
@@ -23,8 +26,11 @@ from .rules.duplicates import (
 )
 from .rules.exceptions import silent_exception_findings
 from .rules.growth import growth_findings
+from .rules.packages import package_findings
+from .rules.security import security_findings
 from .rules.tests import test_findings
 from .rules.types import type_findings
+from .symbols import analyze_files, parse_entry_points
 
 MAX_FILE_BYTES = 2 * 1024 * 1024
 SUPPRESS_RE = re.compile(
@@ -198,6 +204,7 @@ def scan_paths(
     result.files_skipped = skipped
     all_blocks: list[Block] = []
     suppression_map: dict[str, dict[int, set[str]]] = {}
+    selected_paths: set[str] = set()
     growth_paths: set[str] = set()
     if baseline_ref:
         try:
@@ -210,6 +217,7 @@ def scan_paths(
         if relative is None:
             result.files_skipped += 1
             continue
+        selected_paths.add(relative)
         try:
             source = path.read_text(encoding="utf-8-sig", errors="replace")
         except OSError as exc:
@@ -248,9 +256,50 @@ def scan_paths(
             local.extend(type_findings(tree, relative, source, cfg))
         if cfg.enable_comments:
             local.extend(comment_findings(tree, relative, source, cfg))
+        if cfg.enable_security and not is_test:
+            local.extend(security_findings(tree, relative, source, cfg))
         result.findings.extend(local)
 
     result.findings.extend(copy_paste_findings(all_blocks, cfg))
+
+    if cfg.enable_arch or cfg.enable_dead_code or cfg.enable_deps:
+        production: list[Path] = []
+        for path in _all_python_files(root):
+            relative = _safe_relative(root, path)
+            if relative is None or not cfg.included(relative):
+                continue
+            if cfg.is_test_path(relative):
+                continue
+            production.append(path)
+        only_paths = selected_paths if changed_only else None
+        graph = None
+        if cfg.enable_arch or cfg.enable_dead_code:
+            graph = build_graph(root, production, cfg)
+        modules = (
+            analyze_files(root, production, cfg)
+            if cfg.enable_dead_code or cfg.enable_deps
+            else {}
+        )
+        if cfg.enable_arch and graph is not None:
+            result.findings.extend(
+                architecture_findings(graph, cfg, only_paths=only_paths)
+            )
+        if cfg.enable_dead_code and modules:
+            result.findings.extend(
+                dead_code_findings(
+                    modules,
+                    cfg,
+                    entry_points=parse_entry_points(root),
+                    graph=graph,
+                    only_paths=only_paths,
+                )
+            )
+        if cfg.enable_deps:
+            result.findings.extend(
+                package_findings(
+                    root, modules, cfg, baseline_ref=baseline_ref, only_paths=only_paths
+                )
+            )
     result.findings = [
         finding
         for finding in result.findings

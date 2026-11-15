@@ -49,13 +49,13 @@ DEFAULT_SEVERITY = {
     "TYPE003": "error",
     "TYPE004": "error",
     "TYPE005": "error",
-    "TYPE006": "error",
+    "TYPE006": "warning",
     "TYPE007": "error",
     "TYPE008": "error",
-    "TYPE009": "error",
-    "TYPE010": "error",
-    "TYPE011": "error",
-    "TYPE012": "error",
+    "TYPE009": "warning",
+    "TYPE010": "warning",
+    "TYPE011": "warning",
+    "TYPE012": "warning",
     "COMMENT001": "warning",
     "COMMENT002": "warning",
     "COMMENT003": "error",
@@ -63,6 +63,25 @@ DEFAULT_SEVERITY = {
     "SUPPRESS001": "error",
     "SUPPRESS002": "error",
     "STUB001": "error",
+    "ARCH001": "error",
+    "ARCH002": "error",
+    "ARCH003": "warning",
+    "ARCH004": "warning",
+    "DEAD001": "error",
+    "DEAD002": "error",
+    "DEAD003": "warning",
+    "DEAD004": "warning",
+    "PKG001": "error",
+    "PKG002": "error",
+    "PKG003": "warning",
+    "PKG004": "warning",
+    "SEC001": "error",
+    "SEC002": "error",
+    "SEC003": "error",
+    "SEC004": "error",
+    "SEC005": "error",
+    "SEC006": "error",
+    "SEC007": "error",
 }
 
 
@@ -126,6 +145,38 @@ class AntiSlopConfig:
     require_suppression_code: bool = True
     stub_policy: str = "error"  # error | warning | off
 
+    # Architecture
+    enable_arch: bool = False
+    layers: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    allow_imports: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    detect_cycles: bool = True
+    type_checking: str = "ignore"  # ignore | separate | enforce
+    max_fan_out: int = 12
+
+    # Dead code
+    enable_dead_code: bool = False
+    dead_private_only: bool = True
+    dead_unused_imports: bool = True
+    dead_public_severity: str = "warning"
+
+    # Dependencies
+    enable_deps: bool = False
+    dependency_allow: tuple[str, ...] = ()
+    allow_new_dependencies: bool = False
+    check_manifests: bool = True
+    manifest_paths: tuple[str, ...] = ("pyproject.toml", "requirements*.txt")
+    pypi_lookup: bool = False  # reserved; Phase 3 core is offline
+
+    # Security
+    enable_security: bool = False
+    ban_eval: bool = True
+    ban_exec: bool = True
+    ban_pickle: bool = True
+    ban_shell: bool = True
+    ban_yaml_load: bool = True
+    ban_verify_false: bool = True
+    ban_secrets: bool = True
+
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "AntiSlopConfig":
         data = dict(data or {})
@@ -139,6 +190,19 @@ class AntiSlopConfig:
             data["exclude"] = tuple(data["exclude"])
         if "is_test_paths" in data:
             data["is_test_paths"] = tuple(data["is_test_paths"])
+        if "layers" in data:
+            data["layers"] = {
+                str(key): tuple(value) for key, value in dict(data["layers"] or {}).items()
+            }
+        if "allow_imports" in data:
+            data["allow_imports"] = {
+                str(key): tuple(value)
+                for key, value in dict(data["allow_imports"] or {}).items()
+            }
+        if "dependency_allow" in data:
+            data["dependency_allow"] = tuple(data["dependency_allow"])
+        if "manifest_paths" in data:
+            data["manifest_paths"] = tuple(data["manifest_paths"])
         if "severity" in data:
             merged = dict(DEFAULT_SEVERITY)
             merged.update(dict(data["severity"] or {}))
@@ -162,6 +226,12 @@ class AntiSlopConfig:
             raise ValueError("max_isinstance_checks must be >= 1")
         if self.stub_policy not in {"error", "warning", "off"}:
             raise ValueError("stub_policy must be error|warning|off")
+        if self.type_checking not in {"ignore", "separate", "enforce"}:
+            raise ValueError("type_checking must be ignore|separate|enforce")
+        if self.max_fan_out < 1:
+            raise ValueError("max_fan_out must be >= 1")
+        if self.dead_public_severity not in {"error", "warning", "off"}:
+            raise ValueError("dead_public_severity must be error|warning|off")
         if self.on_violation not in {"kick", "revert", "abort"}:
             raise ValueError("on_violation must be kick|revert|abort")
         for rule, level in self.severity.items():

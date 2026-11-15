@@ -21,6 +21,7 @@ from .daemon import serve, start_detached, stop_run
 from .dashboard import serve_dashboard, write_static
 from .engine import Engine, EngineConfig
 from .gate import AntiSlopConfig, baseline_path, scan_paths, write_baseline
+from .gate.sarif import to_sarif
 from .models import Task
 from .skill_install import PROVIDERS, install_skill
 from .state import (
@@ -421,11 +422,23 @@ def cmd_audit(args) -> int:
         overrides["enable_types"] = True
     if args.comments:
         overrides["enable_comments"] = True
+    if args.arch:
+        overrides["enable_arch"] = True
+    if args.dead_code:
+        overrides["enable_dead_code"] = True
+    if args.deps:
+        overrides["enable_deps"] = True
+    if args.security:
+        overrides["enable_security"] = True
     if args.all_gates:
         overrides["enable_core"] = True
         overrides["enable_tests"] = True
         overrides["enable_types"] = True
         overrides["enable_comments"] = True
+        overrides["enable_arch"] = True
+        overrides["enable_dead_code"] = True
+        overrides["enable_deps"] = True
+        overrides["enable_security"] = True
     try:
         config = base.with_overrides(**overrides)
         result = scan_paths(
@@ -462,6 +475,8 @@ def cmd_audit(args) -> int:
         return _audit_exit(result, args.strict)
     if args.format == "json":
         print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    elif args.format == "sarif":
+        print(json.dumps(to_sarif(result), ensure_ascii=False, indent=2))
     else:
         actionable = [finding for finding in result.findings if not finding.baseline]
         print(
@@ -752,7 +767,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     audit.add_argument(
         "--format",
-        choices=["md", "json", "badge"],
+        choices=["md", "json", "badge", "sarif"],
         default="md",
     )
     audit.add_argument(
@@ -776,9 +791,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="enable comment/suppression/stub rules",
     )
     audit.add_argument(
+        "--arch",
+        action="store_true",
+        help="enable architecture/layer/import-cycle rules",
+    )
+    audit.add_argument(
+        "--dead-code",
+        action="store_true",
+        help="enable dead-code and unused-import rules",
+    )
+    audit.add_argument(
+        "--deps",
+        action="store_true",
+        help="enable package/dependency allowlist rules",
+    )
+    audit.add_argument(
+        "--security",
+        action="store_true",
+        help="enable security rules",
+    )
+    audit.add_argument(
         "--all-gates",
         action="store_true",
-        help="enable every Phase 2 gate family",
+        help="enable every anti-slop gate family",
     )
     audit.add_argument(
         "--strict",
