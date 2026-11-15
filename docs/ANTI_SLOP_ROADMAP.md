@@ -1,6 +1,6 @@
 # Waker Anti-Slop Guardian — Phased Implementation Plan
 
-**Status:** Phase 0 + Phase 1 implemented — awaiting acceptance
+**Status:** Phase 0–2 implemented — awaiting acceptance
 **Baseline:** waker-ai v1.2.0
 **Target:** **v2.0.0 — Anti-Slop default-on** (no v1.3 intermediate)
 **Design:** [`docs/ANTI_SLOP_SPEC.md`](ANTI_SLOP_SPEC.md)
@@ -61,9 +61,9 @@ Gate families:
 | Family | Rules | Phase 1 audit | v2.0 default |
 |---|---|---|---|
 | Core anti-slop | `SLOP001–008` | **shipped** | on (new contracts) |
-| Test integrity | `TEST001–008` | not yet | on |
-| Type evidence | `TYPE001–012` | not yet | on for new/changed |
-| Comments/suppression | `COMMENT/SUPPRESS/STUB` | not yet | warn/on for placeholders |
+| Test integrity | `TEST001–008` | **shipped (Phase 2)** | on |
+| Type evidence | `TYPE001–012` | **shipped (Phase 2)** | on for new/changed |
+| Comments/suppression | `COMMENT/SUPPRESS/STUB` | **shipped (Phase 2)** | warn/on for placeholders |
 | Architecture | `ARCH001–004` | not yet | on |
 | Dead code | `DEAD001–004` | not yet | on (private-only) |
 | Dependencies | `PKG001–004` | not yet | on (`allow_new: false`) |
@@ -380,8 +380,8 @@ Tests:
 | Phase | Effort (sessions) | User checkpoint |
 |---|---:|---|
 | 0 | 0.5–1 | **done** |
-| 1 | 2–3 | **done — awaiting acceptance** |
-| 2 | 2–3 | false-positive review |
+| 1 | 2–3 | **done — accepted** |
+| 2 | 2–3 | **done — awaiting acceptance** |
 | 3 | 3–4 | gate set/severity |
 | 4 | 3–4 | kick prompt |
 | 5 | 2–3 | rollback/baseline |

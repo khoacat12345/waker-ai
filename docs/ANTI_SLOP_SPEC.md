@@ -766,13 +766,13 @@ bans the holes an agent uses to silence the checker without adding evidence.
 | `TYPE003` | type alias resolving to `Any`/`unknown` | high | error |
 | `TYPE004` | chained casts `cast(T, cast(...))` | high | error |
 | `TYPE005` | widen-then-cast (value widened to `Any`/`object`, then cast back) | high | error |
-| `TYPE006` | ad-hoc `isinstance`/`issubclass` narrowing outside a type guard | medium | warning |
+| `TYPE006` | ad-hoc `isinstance`/`issubclass` narrowing outside a type guard | medium | error |
 | `TYPE007` | `cast` without a nearby safety/invariant comment | medium | error (new code) |
 | `TYPE008` | `# type: ignore` / `# pyright: ignore` / `# noqa` without a reason | high | error |
-| `TYPE009` | `getattr`/`setattr`/`delattr` with string names, or `globals()`/`locals()`/`vars()` dispatch | medium | warning |
-| `TYPE010` | known value widened to `Any`/`object`/`dict[str, Any]` | medium | warning |
-| `TYPE011` | unsafe dict values (`dict[str, Any]`, `Mapping[str, object]`) | medium | warning |
-| `TYPE012` | `isinstance` used as the only runtime contract for a public input | medium | warning |
+| `TYPE009` | `getattr`/`setattr`/`delattr` with string names, or `globals()`/`locals()`/`vars()` dispatch | medium | error |
+| `TYPE010` | known value widened to `Any`/`object`/`dict[str, Any]` | medium | error |
+| `TYPE011` | unsafe dict values (`dict[str, Any]`, `Mapping[str, object]`) | medium | error |
+| `TYPE012` | Three or more manual `isinstance` checks in one function (manual type switch) | medium | error |
 
 Python AST sketch:
 
@@ -811,8 +811,10 @@ False positives / controls:
   (`TYPE006` allows it); ad-hoc narrowing deep in business logic is not.
 - `getattr`/`setattr` for framework glue can be allowlisted per path/rule.
 - Dynamic `globals()`/`vars()` disables `TYPE009` for that module; do not guess.
-- `TYPE001`/`TYPE002` default to **new/changed code only**; existing signatures
-  are baselined.
+- `TYPE001`/`TYPE002` are high-confidence blocks; `TYPE006`/`TYPE009`/`TYPE010`/
+  `TYPE011`/`TYPE012` are heuristics that can be lowered to warning per project
+  if the baseline shows too much legitimate dynamic code. The approved v2
+  default is error, so baseline/suppress first on legacy AST-heavy code.
 
 Config:
 
@@ -852,7 +854,7 @@ not their vendoring model.
 | `COMMENT004` | TODO/FIXME/HACK without owner/ticket/date | low | warning |
 | `SUPPRESS001` | `# type: ignore`, `# noqa`, `@ts-ignore`, `eslint-disable` without a reason | high | error |
 | `SUPPRESS002` | Blanket suppression without a rule ID (`# type: ignore` vs `# type: ignore[code]`) | medium | warning |
-| `STUB001` | New stub body (`pass`/`...`/`raise NotImplementedError`) in a non-abstract function | high | warning |
+| `STUB001` | New stub body (`pass`/`...`/`raise NotImplementedError`) in a non-abstract function | high | error |
 
 Rules:
 

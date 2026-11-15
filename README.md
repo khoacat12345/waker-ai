@@ -168,8 +168,18 @@ a static shields.io Markdown snippet:
 
 Phase 1 implements the core rules: duplicate symbols, silent broad exceptions,
 cyclomatic complexity, function/module length, copy-paste blocks, file growth,
-and nesting/parameter warnings. Test/type/architecture/dead-code/dependency/
-security families arrive in Phases 2–3.
+and nesting/parameter warnings.
+
+Phase 2 adds the high-signal AI-slop families:
+
+```bash
+waker audit --tests       # TEST001-008: fake green tests, mock abuse
+waker audit --types       # TYPE001-012: Any/cast/type-ignore evidence holes
+waker audit --comments    # COMMENT/SUPPRESS/STUB: comment and stub slop
+waker audit --all-gates   # core + tests + types + comments
+```
+
+Architecture, dead-code, dependency, and security families arrive in Phase 3.
 
 ## Blind evaluation (v1.1)
 

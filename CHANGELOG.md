@@ -9,6 +9,10 @@ All notable changes to `waker-ai`.
 - Read-only `waker audit` anti-slop gate (Phase 1): duplicate symbols, silent
   broad exceptions, cyclomatic complexity, function/module length, copy-paste
   blocks, file growth, and nesting/parameter warnings.
+- Phase 2 gate families: test integrity (`TEST001-008`), type evidence
+  (`TYPE001-012`), and comment/suppression/stub slop (`COMMENT001-004`,
+  `SUPPRESS001-002`, `STUB001`).
+- `waker audit --tests --types --comments` and `--all-gates`.
 - Cleanliness Score 0–100, grade, and shields.io Markdown badge in
   `waker audit`; JSON output includes the score and findings.
 - Baseline support at `.waker/anti-slop-baseline.json`, with

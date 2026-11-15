@@ -13,6 +13,7 @@ from .baseline import baseline_path, load_baseline
 from .config import AntiSlopConfig
 from .model import Finding, ScanResult, badge_markdown, grade_for, score_findings
 from .rules.common import make_finding
+from .rules.comments import comment_findings
 from .rules.complexity import complexity_findings
 from .rules.duplicates import (
     Block,
@@ -22,6 +23,8 @@ from .rules.duplicates import (
 )
 from .rules.exceptions import silent_exception_findings
 from .rules.growth import growth_findings
+from .rules.tests import test_findings
+from .rules.types import type_findings
 
 MAX_FILE_BYTES = 2 * 1024 * 1024
 SUPPRESS_RE = re.compile(
@@ -231,12 +234,20 @@ def scan_paths(
             continue
 
         local: list[Finding] = []
-        local.extend(duplicate_symbol_findings(tree, relative, cfg))
-        local.extend(silent_exception_findings(tree, relative, cfg))
-        local.extend(complexity_findings(tree, relative, source, cfg))
-        if relative in growth_paths:
-            local.extend(growth_findings(root, relative, source, baseline_ref, cfg))
-        all_blocks.extend(collect_blocks(tree, relative, cfg))
+        is_test = cfg.is_test_path(relative)
+        if cfg.enable_core and not is_test:
+            local.extend(duplicate_symbol_findings(tree, relative, cfg))
+            local.extend(silent_exception_findings(tree, relative, cfg))
+            local.extend(complexity_findings(tree, relative, source, cfg))
+            if relative in growth_paths:
+                local.extend(growth_findings(root, relative, source, baseline_ref, cfg))
+            all_blocks.extend(collect_blocks(tree, relative, cfg))
+        if cfg.enable_tests and is_test:
+            local.extend(test_findings(tree, relative, source, cfg))
+        if cfg.enable_types and not is_test:
+            local.extend(type_findings(tree, relative, source, cfg))
+        if cfg.enable_comments:
+            local.extend(comment_findings(tree, relative, source, cfg))
         result.findings.extend(local)
 
     result.findings.extend(copy_paste_findings(all_blocks, cfg))

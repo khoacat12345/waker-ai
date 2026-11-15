@@ -415,6 +415,17 @@ def cmd_audit(args) -> int:
         overrides["baseline"] = args.baseline_file
     if args.no_baseline:
         overrides["baseline"] = "off"
+    if args.tests:
+        overrides["enable_tests"] = True
+    if args.types:
+        overrides["enable_types"] = True
+    if args.comments:
+        overrides["enable_comments"] = True
+    if args.all_gates:
+        overrides["enable_core"] = True
+        overrides["enable_tests"] = True
+        overrides["enable_types"] = True
+        overrides["enable_comments"] = True
     try:
         config = base.with_overrides(**overrides)
         result = scan_paths(
@@ -748,6 +759,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--badge",
         action="store_true",
         help="print only the Markdown badge",
+    )
+    audit.add_argument(
+        "--tests",
+        action="store_true",
+        help="enable test-integrity rules (TEST001-008)",
+    )
+    audit.add_argument(
+        "--types",
+        action="store_true",
+        help="enable type-evidence rules (TYPE001-012)",
+    )
+    audit.add_argument(
+        "--comments",
+        action="store_true",
+        help="enable comment/suppression/stub rules",
+    )
+    audit.add_argument(
+        "--all-gates",
+        action="store_true",
+        help="enable every Phase 2 gate family",
     )
     audit.add_argument(
         "--strict",

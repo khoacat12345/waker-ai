@@ -18,13 +18,14 @@ def make_finding(
     end_line: int | None = None,
     confidence: str = "certain",
     symbol: str | None = None,
+    severity: str | None = None,
 ) -> Finding | None:
-    severity = config.severity_for(rule)
-    if severity == "off":
+    level = severity or config.severity_for(rule)
+    if level == "off":
         return None
     return Finding(
         rule=rule,
-        severity=severity,
+        severity=level,
         path=path,
         line=line,
         col=col,
