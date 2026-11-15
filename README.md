@@ -3,6 +3,7 @@
 [![tests](https://github.com/khoacat12345/waker-ai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/khoacat12345/waker-ai/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/waker-ai.svg)](https://pypi.org/project/waker-ai/)
 [![Agensi](https://img.shields.io/badge/Agensi-Marketplace-0066FF)](https://www.agensi.io/skills/waker-ai)
+[![Anti-Slop](https://img.shields.io/badge/anti--slop-100%2F100-brightgreen)](docs/ANTI_SLOP_SPEC.md)
 
 ![waker demo](docs/demo.gif)
 
@@ -146,40 +147,99 @@ The check never blocks a command. Disable it with `WAKER_UPDATE_CHECK=0` or
 `NO_UPDATE_NOTIFIER=1`; CI is skipped automatically. It sends no telemetry —
 it only reads the public PyPI JSON metadata.
 
-## Anti-Slop Audit (v2 preview)
+## Anti-Slop Audit & AST Watchdog (v2.0)
 
-`waker audit` is a read-only AST quality gate. It does not modify source or
-touch the run engine.
+`waker audit` is a read-only, deterministic AST quality gate. It does not run
+the agent, modify source, or depend on an LLM. The same gate runs inside
+`waker run` after every turn: warnings are advisory, while blocking errors
+prevent `DONE` and produce a precise wake prompt.
 
 ```bash
 waker audit --anti-slop              # changed files, Markdown + score + badge
 waker audit --all                    # whole tracked tree
+waker audit --all-gates              # core + tests + types + comments + arch + deps + security
+waker audit --arch                   # circular imports and layer boundaries
+waker audit --dead-code              # unused private/public symbols and imports
+waker audit --deps                   # allowlist, new dependencies, pinning
+waker audit --security               # eval/pickle/shell/TLS/secrets/SQL
 waker audit --format json            # machine-readable findings + score
+waker audit --format sarif            # SARIF 2.1.0 for GitHub Advanced Security
 waker audit --format badge           # copy-paste Markdown badge
-waker audit --write-baseline         # baseline legacy debt (explicit)
+waker audit --write-baseline          # baseline legacy debt (explicit)
 ```
 
-The Cleanliness Score is 0–100 (errors cost 10, warnings 3) and the badge is
+The Cleanliness Score is `0–100` (errors cost 10, warnings 3) and the badge is
 a static shields.io Markdown snippet:
 
 ```markdown
 ![waker anti-slop](https://img.shields.io/badge/anti--slop-96%2F100-brightgreen)
 ```
 
-Phase 1 implements the core rules: duplicate symbols, silent broad exceptions,
-cyclomatic complexity, function/module length, copy-paste blocks, file growth,
-and nesting/parameter warnings.
+### What the AST Watchdog checks
 
-Phase 2 adds the high-signal AI-slop families:
+| Family | Rules | Default |
+|---|---|---|
+| Core anti-slop | `SLOP000–008` | blocking errors, warning heuristics |
+| Test integrity | `TEST001–008` | blocking; mock ratio warning |
+| Type evidence | `TYPE001–012` | blocking evidence holes; heuristic casts warning |
+| Comments/suppression/stubs | `COMMENT/SUPPRESS/STUB` | warnings; placeholders/stubs errors |
+| Architecture | `ARCH001–004` | layer/cycle errors; fan-out/dynamic warning |
+| Dead code | `DEAD001–004` | private/import errors; public warning |
+| Dependencies | `PKG001–004` | allowlist/new-dep errors; pin/mapping warning |
+| Security | `SEC001–007` | blocking errors |
+
+Calibration is intentional: `TYPE006`, `TYPE009`, `TYPE010`, `TYPE011` and
+`TYPE012` are warnings because AST-heavy code legitimately uses
+`isinstance`/`getattr`; the high-confidence `TYPE001–005` and `TYPE007–008`
+remain blocking. A finding includes a stable fingerprint, file, line/column,
+severity, confidence, message and a repair recipe.
+
+### Baseline: legacy debt does not block adoption
+
+Run once on a legacy repository, commit the baseline, and only new findings
+will block:
 
 ```bash
-waker audit --tests       # TEST001-008: fake green tests, mock abuse
-waker audit --types       # TYPE001-012: Any/cast/type-ignore evidence holes
-waker audit --comments    # COMMENT/SUPPRESS/STUB: comment and stub slop
-waker audit --all-gates   # core + tests + types + comments
+waker audit --all --write-baseline
+git add .waker/anti-slop-baseline.json
+waker audit --all
 ```
 
-Architecture, dead-code, dependency, and security families arrive in Phase 3.
+The engine also snapshots pre-run findings in memory. If an agent touches an
+old file, its existing violations are treated as debt; a newly introduced
+violation in the same file still blocks. Use
+`waker audit --baseline-file <path>` (or `--baseline <path>.json`) to select
+another baseline. `waker run --no-baseline` disables baseline suppression for
+that run.
+
+### Engine enforcement: kick, revert, abort
+
+After every turn, the engine scans changed Python files. A blocking finding
+sets `Diagnosis.SLOP`, denies `DONE` even when the agent's tests are green, and
+puts the following evidence in the next wake prompt:
+
+```text
+ERROR SEC001 src/pay.py:42 - Dynamic code execution via `eval()`.
+       Fix: Parse data or use an explicit dispatch table; never eval untrusted input.
+```
+
+The default policy is `kick` (keep the file and make the agent fix it).
+`on_violation="revert"` restores only the violating paths from the pre-turn
+checkpoint and preserves unrelated work; it never runs `git reset --hard`.
+`on_violation="abort"` stops immediately with exit code `6`.
+
+The Rich TUI quality row shows the score, grade (`A+` at 100), error count and
+warning count for the latest turn. `waker status --format json` exposes the
+same block as `quality`.
+
+### SARIF for CI
+
+```bash
+waker audit --all --all-gates --format sarif > waker.sarif
+```
+
+Upload `waker.sarif` to GitHub Advanced Security or any SARIF 2.1.0 consumer.
+The report includes rule IDs, locations, fingerprints and the quality score.
 
 ## Blind evaluation (v1.1)
 
@@ -299,18 +359,21 @@ Phase reports: `.waker/runs/phase1_report.md`, `phase2_report.md`, `phase3_repor
 
 ## Status
 
-**v1.1.2** - blind evaluation (hidden vault + sanitized grading), engine,
-3 adapter tiers, daemon/skills, CI matrix, dashboard and release automation.
+**v2.0.0 — Anti-Slop AI Code Guardian** — default-on deterministic AST
+watchdog, baseline tracking, selective rollback, SARIF, and a Rich quality TUI.
 
 Maturity:
 
+- **Anti-Slop gate** — Python stdlib only; 30+ rules; full pytest suite green.
 - **OpenCode T1** — live E2E verified.
 - **Claude T1** — beta: command/stream/permission handling unit-tested, no live
   CI run yet (the CLI is not installed on the build runner).
-- **PTY T3** — Windows only; POSIX support is planned for v1.1.
+- **PTY T3** — Windows only; POSIX support is planned.
 - **Cost guard** — exact for OpenCode, best-effort for Claude, 0 for generic/PTY.
 
-PyPI: **published** — `pip install waker-ai` (v1.1.2).
+PyPI: v2.0.0 distributions are built and `twine check` validated; publish
+after release approval. The current stable install remains `pip install
+waker-ai` (pin `waker-ai==1.2.0` for pre-anti-slop behavior).
 
 ## License
 

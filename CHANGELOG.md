@@ -2,22 +2,98 @@
 
 All notable changes to `waker-ai`.
 
-## Unreleased — v2.0.0 development
+## v2.0.0 — 2026-11-16
+
+**Waker Anti-Slop AI Code Guardian (default-on).**
+
+This is a major release: every `waker run` now treats deterministic AST
+quality as part of the completion contract. The agent must leave the changed
+files clean, not merely claim that tests pass.
 
 ### Added
 
-- Read-only `waker audit` anti-slop gate (Phase 1): duplicate symbols, silent
-  broad exceptions, cyclomatic complexity, function/module length, copy-paste
-  blocks, file growth, and nesting/parameter warnings.
-- Phase 2 gate families: test integrity (`TEST001-008`), type evidence
-  (`TYPE001-012`), and comment/suppression/stub slop (`COMMENT001-004`,
-  `SUPPRESS001-002`, `STUB001`).
-- `waker audit --tests --types --comments` and `--all-gates`.
-- Cleanliness Score 0–100, grade, and shields.io Markdown badge in
-  `waker audit`; JSON output includes the score and findings.
-- Baseline support at `.waker/anti-slop-baseline.json`, with
-  `waker audit --write-baseline`.
-- Static anti-slop fixtures and unit tests.
+- **Anti-slop gate** (`waker.gate`): read-only Python AST checks with stable
+  fingerprints, line/column evidence, severity, confidence, score, grade and
+  Markdown badge.
+- **Core anti-slop rules** (`SLOP000–008`): duplicate symbols, silent broad
+  exceptions, cyclomatic complexity, function/module length, copy-paste blocks,
+  file growth, nesting and parameter warnings.
+- **Test integrity rules** (`TEST001–008`): no-assert tests, tautologies,
+  mocking the SUT, uncalled mock assertions, swallowed assertions,
+  unconditional skip/xfail, mock-ratio warnings and orphan tests.
+- **Type evidence rules** (`TYPE001–012`): unjustified `Any` parameters and
+  returns, `Any` aliases, chained casts, widen-then-cast, ad-hoc
+  `isinstance`, unexplained `# type: ignore`, string attribute access and
+  unsafe dictionary values.
+- **Comment/suppression/stub rules** (`COMMENT001–004`, `SUPPRESS001–002`,
+  `STUB001`): narrator/step/placeholder comments, unexplained suppressions
+  and placeholder-only function bodies.
+- **Architecture rules** (`ARCH001–004`): module graph, relative imports,
+  `TYPE_CHECKING` edges, Tarjan SCC import cycles, layer inversion, fan-out
+  and non-static dynamic imports.
+- **Dead-code rules** (`DEAD001–004`): unused private/public symbols and
+  imports, with `__all__`, pytest hooks, framework hooks and pyproject entry
+  points exempted where appropriate.
+- **Dependency rules** (`PKG001–004`): stdlib/first-party detection through
+  `sys.stdlib_module_names` and `importlib.metadata.packages_distributions()`,
+  allowlists, new-dependency checks, pinning warnings and import/distribution
+  mapping warnings.
+- **Security rules** (`SEC001–007`): `eval`/`exec`, unsafe pickle/marshal,
+  `shell=True`, unsafe `yaml.load`, disabled TLS verification, hardcoded
+  secrets (redacted in output) and SQL string interpolation.
+- **SARIF 2.1.0 export**: `waker audit --format sarif`, suitable for GitHub
+  Advanced Security and other CI consumers.
+- **Baseline support**: `.waker/anti-slop-baseline.json` stores legacy debt.
+  The engine also snapshots pre-run findings, so changing an old file does not
+  inherit all of its historical violations; newly introduced findings still
+  block. Stable keys survive line shifts without hiding a second finding in the
+  same file.
+- **Engine enforcement**: `Diagnosis.SLOP`, `Observation.slop_ok`,
+  `Observation.slop_findings`, `Observation.slop_blocking`; blocking findings
+  deny `DONE` and generate a wake prompt with rule ID, file, line, message and
+  repair recipe.
+- **Violation policies**: `kick` (default), `revert` and `abort`.
+  `revert` restores only violating paths from the pre-turn checkpoint and never
+  runs `git reset --hard`; unrelated work is preserved. `abort` terminates with
+  exit code `6`.
+- **Quality display**: Rich TUI status bar and Markdown/JSON quality block with
+  Cleanliness Score, grade, errors and warnings.
+- **CLI expansion**: `waker audit --arch --dead-code --deps --security`,
+  `--all-gates`, `--baseline`, `--baseline-file`, `--no-baseline`,
+  `--write-baseline`, `--format sarif`, and per-run `waker run --baseline` /
+  `--no-baseline`.
+
+### Changed
+
+- **Anti-Slop is default-on** for new runs: the engine enables core, tests,
+  types, comments, architecture, dead code, dependencies and security checks.
+  Set `EngineConfig(anti_slop=False)` or use the CLI opt-out for legacy
+  behavior.
+- Calibration: `TYPE006`, `TYPE009`, `TYPE010`, `TYPE011` and `TYPE012` are
+  warnings; `TYPE001–005` and `TYPE007–008` remain blocking errors.
+- Cleanliness Score and badge are now part of `waker audit` output, JSON and
+  the printable report.
+- `waker status --format json` includes the latest `quality` block; `waker
+  watch` and `waker report` show the quality line.
+
+### Migration
+
+- Users who need the old behavior can pin `waker-ai==1.2.0` or disable the
+  anti-slop watchdog.
+- For legacy repositories, run `waker audit --write-baseline` once, commit
+  `.waker/anti-slop-baseline.json`, then use `waker audit` normally. Only new
+  findings should block.
+- Suppressions use `# waker: ignore[RULE] reason="..."`; a reason and rule ID
+  are required.
+
+### Tests and packaging
+
+- Full pytest suite green (1 Windows-only skip); zero new runtime
+  dependencies beyond the existing `pyyaml` and `rich` dependencies.
+- `python -m build` and `twine check dist/*` are part of the release gate.
+- Python standard library is used for all gate logic; TypeScript/JavaScript is
+  a future external adapter. Auto-fix is deferred to v2.1.
+
 
 ## v1.2.0 — 2026-11-15
 
