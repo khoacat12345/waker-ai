@@ -110,6 +110,8 @@ src/waker/gate/
     complexity.py      # SLOP003, SLOP004, SLOP005, SLOP008
     growth.py          # SLOP007
     tests.py           # TEST001-TEST008
+    types.py           # TYPE001-TYPE012
+    comments.py        # COMMENT001-004, SUPPRESS001-002, STUB001
     architecture.py    # ARCH001-ARCH004, import graph/SCC
     dead_code.py       # DEAD001-DEAD004, symbol table
     dependencies.py    # PKG001-PKG004, manifests/import-dist mapping
@@ -715,6 +717,184 @@ The common failure mode of all four is **false positives**. Waker’s brand is
 missed slop. Therefore: `certain` rules block, `likely` rules warn, legacy is
 baselined, and every suppression requires a reason.
 
+### 4A.9 Feature matrix vs prior art (and what Waker still lacks)
+
+| Capability | Waker spec | dmmulroy/anti-slop | TinyFrontier/anti-slop-py | scanaislop/aislop | dannote/sloplint |
+|---|---:|---:|---:|---:|---:|
+| Deterministic AST | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Zero new runtime deps | ✅ | ❌ Oxlint | ✅ | ❌ Node | ❌ ast-grep |
+| Python | ✅ | ❌ | ✅ | ✅ | ✅ |
+| TypeScript / JS | ⚠️ adapter only | ✅ | ❌ | ✅ | ✅ |
+| Type-evidence rules (`Any`/cast/ignore) | ✅ (new §4A.10) | ✅ | ✅ | ⚠️ partial | ❌ |
+| Test integrity / fake tests | ✅ | ❌ | ❌ | ⚠️ partial | ❌ |
+| Architecture / layer direction | ✅ | ❌ | ❌ | ⚠️ opt-in | ❌ |
+| Dead code / unused imports | ✅ | ❌ | ❌ | ✅ | ❌ |
+| Dependency / package whitelist | ✅ | ❌ | ❌ | ⚠️ partial | ❌ |
+| Security (eval/shell/secrets) | ✅ | ❌ | ❌ | ✅ | ❌ |
+| Comment / suppression slop | ✅ (new §4A.11) | ⚠️ partial | ⚠️ partial | ✅ | ✅ |
+| Active kick / rollback | ✅ **unique** | ❌ | ❌ | ⚠️ hook/fix | ❌ |
+| Hidden-test blind grading | ✅ **unique** | ❌ | ❌ | ❌ | ❌ |
+| Baseline / SARIF | ✅ | ⚠️ | ✅ | ✅ | ⚠️ |
+| Auto-fix / score / badge | ❌ | ❌ | ❌ | ✅ | ❌ |
+
+**Verdict:** Waker already has the **watchdog architecture, contract enforcement,
+hidden tests, and most quality families**. The review found two clear gaps, now
+closed in this revision:
+
+1. **Type-evidence rules** (`Any`, `cast`, `# type: ignore`, ad-hoc
+   `isinstance`) — the core thesis of `anti-slop-py`/`dmmulroy/anti-slop`.
+   See §4A.10.
+2. **Comment/suppression slop** — obvious comments, placeholders, unjustified
+   suppressions — the core thesis of `sloplint`/`aislop`. See §4A.11.
+
+`Waker spec` means design coverage in this document; the **v1.2.0 code** does not
+implement the gate yet. Multi-language (TS/JS), auto-fix, scoring/badges, and
+editor hooks are **intentional non-goals for the zero-dependency Python core**;
+integrate them as optional adapters/commands rather than reimplementing 50 rules.
+
+### 4A.10 Type Evidence Guard (`TYPE001–TYPE012`)
+
+Waker’s brand is **evidence**. A type checker permits `Any`, `cast`, and
+`# type: ignore` by design; those are legal holes in its own system. This family
+bans the holes an agent uses to silence the checker without adding evidence.
+
+| ID | Rule | Confidence | Default |
+|---|---|---|---|
+| `TYPE001` | `Any`/`object`/`unknown` on a new function parameter | high | error (new/changed) |
+| `TYPE002` | `Any`/`unknown` return annotation | high | error |
+| `TYPE003` | type alias resolving to `Any`/`unknown` | high | error |
+| `TYPE004` | chained casts `cast(T, cast(...))` | high | error |
+| `TYPE005` | widen-then-cast (value widened to `Any`/`object`, then cast back) | high | error |
+| `TYPE006` | ad-hoc `isinstance`/`issubclass` narrowing outside a type guard | medium | warning |
+| `TYPE007` | `cast` without a nearby safety/invariant comment | medium | error (new code) |
+| `TYPE008` | `# type: ignore` / `# pyright: ignore` / `# noqa` without a reason | high | error |
+| `TYPE009` | `getattr`/`setattr`/`delattr` with string names, or `globals()`/`locals()`/`vars()` dispatch | medium | warning |
+| `TYPE010` | known value widened to `Any`/`object`/`dict[str, Any]` | medium | warning |
+| `TYPE011` | unsafe dict values (`dict[str, Any]`, `Mapping[str, object]`) | medium | warning |
+| `TYPE012` | `isinstance` used as the only runtime contract for a public input | medium | warning |
+
+Python AST sketch:
+
+```python
+# Any/object/unknown on parameters or returns
+for node in ast.walk(tree):
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        for arg in [*node.args.args, *node.args.kwonlyargs]:
+            if _is_any_or_object(arg.annotation):
+                report("TYPE001", node, arg.arg)
+        if _is_any_or_object(node.returns):
+            report("TYPE002", node, node.name)
+
+# chained cast: Call(func=cast, args[0]=Call(func=cast, ...))
+# widen-then-cast: assignment to Any/object, then cast back from that name
+# type: ignore: tokenize comments, require `[code]` and reason
+# ad-hoc isinstance: Call(func=isinstance) not inside a TypeGuard/TypeIs return
+```
+
+TS/JS equivalents (optional adapter, borrowed from `dmmulroy/anti-slop`):
+`as unknown as T`, `any`, `unknown` parameters/returns, `@ts-ignore` /
+`@ts-expect-error` without a reason, `object` parameters, `Reflect.get/apply`,
+runtime `typeof` narrowing, module mocking. Waker’s Python core should not pretend
+to parse TypeScript; map these to an optional `aislop`/`oxlint` command.
+
+Why this matters: hidden tests prove behavior, not type contracts. An agent can
+pass every test while turning the public API into `Any` soup. Type evidence is
+the missing bridge between “tests green” and “maintainable contract”.
+
+False positives / controls:
+
+- `Any` in legacy code is baselined; only new/changed functions block.
+- `cast` with a real runtime validation or a `# SAFETY:` invariant is allowed
+  (`TYPE007` checks for the comment; `TYPE005` checks the actual flow).
+- `isinstance` at an I/O boundary or inside a `TypeGuard` is correct
+  (`TYPE006` allows it); ad-hoc narrowing deep in business logic is not.
+- `getattr`/`setattr` for framework glue can be allowlisted per path/rule.
+- Dynamic `globals()`/`vars()` disables `TYPE009` for that module; do not guess.
+- `TYPE001`/`TYPE002` default to **new/changed code only**; existing signatures
+  are baselined.
+
+Config:
+
+```yaml
+gates:
+  type_evidence:
+    enabled: true
+    paths: ["src/**/*.py"]
+    ban_any_parameters: true
+    ban_any_returns: true
+    ban_any_aliases: true
+    ban_chained_casts: true
+    ban_widen_then_cast: true
+    ban_adhoc_isinstance: warning
+    require_safety_comment: true
+    ban_unexplained_type_ignore: true
+    ban_string_attribute_access: true
+    unsafe_dict_values: warning
+    new_code_only: true
+    baseline: auto
+    on_violation: kick
+```
+
+Prior art: `dmmulroy/anti-slop` (19 generic + 5 Effect Oxlint rules),
+`TinyFrontier/anti-slop-py` (15 core rules + FastAPI group, zero-dep
+`ast`+`tokenize`+scope table, baseline/diff/review). Waker borrows the
+**evidence-hole** thesis and the actionable “write this instead” diagnostics,
+not their vendoring model.
+
+### 4A.11 Comment & Suppression Slop (`COMMENT001–004`, `SUPPRESS001–002`, `STUB001`)
+
+| ID | Rule | Confidence | Default |
+|---|---|---|---|
+| `COMMENT001` | Obvious/narrator comment restating the code (“This function…”) | medium | warning |
+| `COMMENT002` | Step comment (`Step 1:`) or section divider (`==== Helpers ====`) | medium | warning |
+| `COMMENT003` | Placeholder/apologetic/AI-generated comment (“… rest of code”, “quick hack”, “replace this”) | high | error |
+| `COMMENT004` | TODO/FIXME/HACK without owner/ticket/date | low | warning |
+| `SUPPRESS001` | `# type: ignore`, `# noqa`, `@ts-ignore`, `eslint-disable` without a reason | high | error |
+| `SUPPRESS002` | Blanket suppression without a rule ID (`# type: ignore` vs `# type: ignore[code]`) | medium | warning |
+| `STUB001` | New stub body (`pass`/`...`/`raise NotImplementedError`) in a non-abstract function | high | warning |
+
+Rules:
+
+- Comments should explain **why**, not **what**. A wire-format note, mutex
+  ordering invariant, or algorithm provenance is allowed;
+  `// Initialize the counter` is not.
+- Do not flag comments that contain actual constraints/evidence; sloplint’s
+  false-positive tests are the reference.
+- Suppressions are not banned, but must be **narrow and justified**:
+  ```python
+  # waker: ignore[TYPE001] reason="third-party callback signature"
+  # type: ignore[arg-type]  # reason: upstream stub is wrong; see #123
+  ```
+  No reason → error; blanket → warning/error.
+- Stubs are warnings, not errors: a deliberate Protocol/ABC method is allowed;
+  a new production function that only `raise NotImplementedError` is slop.
+- This family is **warning-first** except placeholders and unexplained
+  suppressions; comment style is subjective.
+
+Config:
+
+```yaml
+gates:
+  comments:
+    enabled: true
+    paths: ["src/**/*.py", "tests/**/*.py"]
+    ban_obvious_comments: warning
+    ban_step_comments: warning
+    ban_placeholder_comments: error
+    todo_policy: warning       # warning | off | error
+    require_suppression_reason: true
+    require_suppression_code: true
+    stub_policy: warning
+    allow_patterns: ["SAFETY:", "Wire format:", "Mutex order:"]
+    on_violation: kick
+```
+
+Prior art: `dannote/sloplint` (obvious/narrator/step/section/placeholder/
+apologetic/AI-generated comments, empty error handlers; ast-grep, 8 languages),
+`scanaislop/aislop` (narrative comments, swallowed exceptions, hidden fallbacks,
+todo stubs). Waker adds the **agent kick** and the same suppression-reason
+discipline it already uses internally.
+
 ---
 
 ## 5. Contract schema (v2, backward compatible in v1.3)
@@ -788,6 +968,33 @@ gates:
     ban_unconditional_skip: true
     max_mock_ratio: 0.70
     max_mock_ratio_severity: warning
+    on_violation: kick
+
+  type_evidence:
+    enabled: true
+    paths: ["src/**/*.py"]
+    ban_any_parameters: true
+    ban_any_returns: true
+    ban_any_aliases: true
+    ban_chained_casts: true
+    ban_widen_then_cast: true
+    ban_adhoc_isinstance: warning
+    require_safety_comment: true
+    ban_unexplained_type_ignore: true
+    new_code_only: true
+    baseline: auto
+    on_violation: kick
+
+  comments:
+    enabled: true
+    paths: ["src/**/*.py", "tests/**/*.py"]
+    ban_obvious_comments: warning
+    ban_step_comments: warning
+    ban_placeholder_comments: error
+    require_suppression_reason: true
+    require_suppression_code: true
+    stub_policy: warning
+    allow_patterns: ["SAFETY:", "Wire format:", "Mutex order:"]
     on_violation: kick
 
   architecture:
@@ -1181,8 +1388,8 @@ The zero-dependency AST gate is **Python-only**. For JS/TS/Rust, Waker can:
 
 | Version | Content | Default |
 |---|---|---|
-| **v1.3.0** | `waker.gate`, `waker audit`, JSON/SARIF, opt-in `gates` schema, `SLOP` diagnosis, test-integrity warnings | core anti-slop **off** |
-| **v2.0.0** | default-on for new `version: 2` contracts; core + test + architecture + dead-code + dependencies + security families; rollback policies | on for new contracts |
+| **v1.3.0** | `waker.gate`, `waker audit`, JSON/SARIF, opt-in `gates` schema, `SLOP` diagnosis, test-integrity + type-evidence warnings | core anti-slop **off** |
+| **v2.0.0** | default-on for new `version: 2` contracts; core + test + type-evidence + comments + architecture + dead-code + dependencies + security families; rollback policies | on for new contracts |
 | **v2.1.0** | API/async/coupling rules, JS/TS plugin interface, hunk-level revert, mutation/coverage adapters | opt-in |
 
 If a single major release is required, ship **v2.0.0** and keep `v1.2.x`
@@ -1239,6 +1446,11 @@ For v2:
   skip.
 - `tests/fixtures/guardians/tests_real/` — meaningful assertions, specific
   `pytest.raises`, property-based test (allowed), integration marker.
+- `tests/fixtures/guardians/types/` — `Any` params/returns, chained casts,
+  widen-then-cast, unexplained `# type: ignore`, ad-hoc `isinstance`, safe
+  `TypeGuard`/boundary parsing (allowed).
+- `tests/fixtures/guardians/comments/` — obvious/narrator/step/placeholder
+  comments, valid why-comments, suppression with/without reason.
 - `tests/fixtures/guardians/architecture/` — core→ui inversion, cycle,
   `TYPE_CHECKING` false positive.
 - `tests/fixtures/guardians/dead_code/` — unused private function, unused
@@ -1254,6 +1466,11 @@ For v2:
 - Test integrity: no-assert, tautology, mock-the-SUT, uncalled mock assert,
   swallowed assert, skip/xfail; real tests and property-based tests must pass;
   mock-ratio warning must not block.
+- Type evidence: `Any`/`object` params/returns, chained casts, widen-then-cast,
+  unexplained `# type: ignore`, ad-hoc `isinstance`; `TypeGuard`/boundary
+  parsing and safety-commented casts pass; new-code-only baseline works.
+- Comments/suppression: obvious/step/placeholder comments; valid why-comments
+  pass; suppression without reason/code fails; stub warnings.
 - Architecture: forbidden layer, cycle, `TYPE_CHECKING` false positive,
   baseline; dynamic import warning.
 - Dead code: private unused blocks; public API/framework/entry point/`.pyi`
@@ -1282,6 +1499,12 @@ For v2:
 - [ ] `waker run` rejects a slop-producing fake agent (`SLOP`), wakes it, then
   accepts a clean turn (`DONE`).
 - [ ] Fake test fixture is rejected (`TEST003`); real/property-based tests pass.
+- [ ] `Any`/chained-cast fixture is rejected (`TYPE001`/`TYPE004`);
+  `TypeGuard`/boundary parsing and safety-commented casts pass.
+- [ ] Unexplained `# type: ignore` is rejected (`TYPE008`); a scoped,
+  reasoned suppression passes.
+- [ ] Placeholder comment fails (`COMMENT003`); a wire-format/why comment and a
+  reasoned suppression pass.
 - [ ] Core→UI import is rejected (`ARCH001`); a cycle is rejected (`ARCH002`);
   `TYPE_CHECKING` alone does not create a cycle.
 - [ ] Private unused function is rejected (`DEAD001`); public API/framework hook
@@ -1305,6 +1528,9 @@ For v2:
 | False positives (metaprogramming, generated code) | baseline, exclusions, suppression with reason, warn-first rollout |
 | Duplicate detection noise | scope-aware, decorator/platform exemptions, thresholds, cross-file only for copy-paste |
 | Test guard false positives (property tests, integration mocks) | confidence tiers, markers/overrides, mutation testing as optional proof |
+| Type-evidence false positives (dynamic code, legacy `Any`) | new-code-only, baseline, `TypeGuard`/boundary allowlist, safety-comment escape |
+| Comment-style subjectivity | warning-first, allow why-comments, block only placeholders/unexplained suppression |
+| Suppression fatigue | require narrow code + reason; baseline legacy suppressions; no blanket rules |
 | Mock ratio treated as a defect | warning/info only; structural fake-test rules block |
 | Architecture false positives (`TYPE_CHECKING`, lazy/dynamic imports) | type-only edges separate, allowlist, baseline, warning for dynamic |
 | Dead-code false positives (public API, framework hooks) | private-only + confidence + entry-point/framework/`.pyi` exemptions |
@@ -1345,7 +1571,7 @@ For v2:
 |---|---|---|
 | 0 | This spec + rule IDs + fixtures | reviewed |
 | 1 | `waker.gate` core + `waker audit` read-only | unit tests, clean/slop fixtures |
-| 2 | Test-integrity + architecture scanners in `audit` | false-positive fixtures, JSON/SARIF |
+| 2 | Test-integrity + type-evidence + comment scanners in `audit` | false-positive fixtures, JSON/SARIF |
 | 3 | Contract schema + engine `SLOP` + wake prompt | fake-agent E2E, no regression |
 | 4 | Dead-code + dependency + security scanners | fixtures, redaction, offline mode |
 | 5 | Baseline, suppression, TUI/status, perf budget | CLI acceptance, 200-file scan |
@@ -1426,4 +1652,10 @@ dead_code.unused_imports                 true
 dependencies.allow_new                   false
 dependencies.pypi_lookup                 false
 security.ban                             eval, exec, pickle, shell=True, yaml.load, verify=False
+type_evidence.new_code_only              true
+type_evidence.ban_any_parameters         true
+type_evidence.ban_adhoc_isinstance       warning
+comments.ban_obvious_comments            warning
+comments.ban_placeholder_comments        error
+comments.require_suppression_reason      true
 ```
