@@ -29,6 +29,7 @@ class Diagnosis(str, Enum):
     STALL = "STALL"
     BREAKER = "BREAKER"
     PARTIAL = "PARTIAL"
+    SLOP = "SLOP"
 
 
 #: Diagnoses that stop the run immediately.
@@ -258,6 +259,9 @@ class Observation:
     hidden_failures: list[str] = field(default_factory=list)
     hidden_summary: list[str] = field(default_factory=list)
     vault_tamper: bool = False
+    slop_ok: bool = True
+    slop_findings: list[str] = field(default_factory=list)
+    slop_blocking: bool = False
 
 
 @dataclass

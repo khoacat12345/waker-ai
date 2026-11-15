@@ -103,6 +103,8 @@ class EngineConfig:
     vault_id: str | None = None
     vault_dir: str | None = None
     run_id: str | None = None
+    anti_slop: bool = True
+    slop_config: object | None = None
 
 
 class Engine:
@@ -621,6 +623,7 @@ class Engine:
         self._hidden_failures = hidden_failures
 
         all_done = gate_ok and test_ok and hidden_ok
+        slop_ok, slop_findings, slop_blocking = self._scan_slop()
 
         failed_outputs = [
             result.output
@@ -679,7 +682,73 @@ class Engine:
             hidden_failures=hidden_failures,
             hidden_summary=hidden_summary,
             vault_tamper=vault_tamper,
+            slop_ok=slop_ok,
+            slop_findings=slop_findings,
+            slop_blocking=slop_blocking,
         )
+
+    def _scan_slop(self) -> tuple[bool, list[str], bool]:
+        """Run the anti-slop gate on files changed since the run baseline.
+
+        A scanner failure is deliberately non-fatal: the quality gate must
+        never crash an otherwise healthy run.
+        """
+        if not self.config.anti_slop:
+            return True, [], False
+        try:
+            from .gate import AntiSlopConfig, scan_paths
+
+            state = self.state
+            assert state is not None
+            configured = self.config.slop_config
+            if configured is None:
+                configured = AntiSlopConfig(
+                    enable_core=True,
+                    enable_tests=True,
+                    enable_types=True,
+                    enable_comments=True,
+                    enable_arch=True,
+                    enable_dead_code=True,
+                    enable_deps=True,
+                    enable_security=True,
+                )
+            result = scan_paths(
+                self.repo,
+                config=configured,
+                changed_only=True,
+                baseline_ref=state.baseline_commit,
+                use_baseline=True,
+            )
+        except Exception as exc:  # noqa: BLE001 - gate must never break the loop
+            if self.events is not None:
+                self.events.append("slop_scan_error", error=str(exc)[:300])
+            return True, [], False
+
+        if result.errors:
+            if self.events is not None:
+                self.events.append(
+                    "slop_scan_error", error="; ".join(result.errors)[:300]
+                )
+        ordered = sorted(
+            result.actionable,
+            key=lambda finding: (
+                finding.severity != "error",
+                finding.path,
+                finding.line,
+                finding.rule,
+            ),
+        )
+        findings: list[str] = []
+        for finding in ordered:
+            line = (
+                f"{finding.severity.upper()} {finding.rule} "
+                f"{finding.path}:{finding.line} - {finding.message}"
+            )
+            if finding.suggestion:
+                line += f" | Fix: {finding.suggestion}"
+            findings.append(line)
+        blocking = any(finding.severity == "error" for finding in ordered)
+        return not blocking, findings, blocking
 
     # -------------------------------------------------------------------- record
 
@@ -784,6 +853,11 @@ class Engine:
                     for name, result in self._hidden_results.items()
                 },
                 "vault_tamper": obs.vault_tamper,
+                "slop": {
+                    "ok": obs.slop_ok,
+                    "blocking": obs.slop_blocking,
+                    "findings": obs.slop_findings[:20],
+                },
             },
         )
         self.events.append(
@@ -794,6 +868,8 @@ class Engine:
             test_exit=obs.test_exit,
             tamper=obs.tamper,
             all_done=obs.all_tasks_done,
+            slop_ok=obs.slop_ok,
+            slop_blocking=obs.slop_blocking,
         )
 
     def _message_for(self, task_id: str) -> str:
@@ -875,6 +951,16 @@ class Engine:
             notes.append("Vault hash changed. Stopping to protect the exam.")
         if diag is Diagnosis.FALSE_DONE:
             notes.append("You claimed done but the gate is still red. Only claim done when tests are actually green.")
+        if diag is Diagnosis.SLOP:
+            notes.append(
+                "Anti-slop gate blocked DONE. Fix every ERROR below; warnings are advisory:"
+            )
+            errors = [
+                line for line in obs.slop_findings if line.startswith("ERROR ")
+            ]
+            notes.extend(f"- {line}" for line in errors[:10])
+            if len(errors) > 10:
+                notes.append(f"- ... and {len(errors) - 10} more blocking finding(s).")
         if diag is Diagnosis.BREAKER and obs.max_cost_usd > 0 and obs.cost_usd >= obs.max_cost_usd:
             notes.append(
                 f"Cost limit reached (${obs.cost_usd:.4f} / ${obs.max_cost_usd:.4f}). Stopping."

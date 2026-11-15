@@ -36,7 +36,13 @@ def diagnose(obs: Observation) -> Diagnosis:
 
     # 5. Real success: every task has evidence and the gate is green.
     test_ok = (not obs.has_test) or obs.test_exit == 0
-    if obs.all_tasks_done and test_ok and obs.integrity_ok and obs.hidden_ok:
+    if (
+        obs.all_tasks_done
+        and test_ok
+        and obs.integrity_ok
+        and obs.hidden_ok
+        and not obs.slop_blocking
+    ):
         return Diagnosis.DONE
 
     # 5b. Cost guard: never let a retry loop burn the budget.
@@ -48,6 +54,11 @@ def diagnose(obs: Observation) -> Diagnosis:
         return Diagnosis.SUSPECT_TEST
     if obs.hidden_failed > 0:
         return Diagnosis.HIDDEN_FAIL
+
+    # 5d. Anti-slop blockers keep the run alive even when all tests are green.
+    # Tamper, blocked, frozen, and hidden failures deliberately outrank quality.
+    if obs.slop_blocking:
+        return Diagnosis.SLOP
 
     # 6. Every failure looks like a broken test, not broken code.
     if obs.suspect_test:
