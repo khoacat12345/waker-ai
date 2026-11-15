@@ -2,6 +2,7 @@
 
 **Status:** proposed (design)
 **Target:** v2.0.0 (opt-in preview in v1.3.0)
+**Implementation plan:** [`ANTI_SLOP_ROADMAP.md`](ANTI_SLOP_ROADMAP.md)
 **Owner:** Waker maintainers
 **Scope:** Python AST quality gate for AI-generated code, contract schema,
 engine enforcement, CLI diagnostics, packaging, migration.
