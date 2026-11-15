@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from .. import evidence, globs, winproc
-from .baseline import baseline_path, load_baseline
+from .baseline import baseline_path, load_baseline, suppress_known
 from .config import AntiSlopConfig
 from .graph import build_graph
 from .model import Finding, ScanResult, badge_markdown, grade_for, score_findings
@@ -312,10 +312,7 @@ def scan_paths(
         except (OSError, ValueError) as exc:
             result.errors.append(f"baseline: {exc}")
             known = set()
-        for finding in result.findings:
-            if finding.fingerprint in known:
-                finding.baseline = True
-                result.baseline_suppressed += 1
+        result.baseline_suppressed += suppress_known(result.findings, known)
 
     actionable = [finding for finding in result.findings if not finding.baseline]
     result.score = score_findings(actionable)

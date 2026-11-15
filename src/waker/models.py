@@ -44,6 +44,7 @@ EXIT_CODES: dict[Diagnosis, int] = {
     Diagnosis.BLOCKED: 3,
     Diagnosis.SUSPECT_TEST: 4,
     Diagnosis.VAULT_TAMPER: 5,
+    Diagnosis.SLOP: 6,
 }
 
 

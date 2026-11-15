@@ -105,6 +105,7 @@ class EngineConfig:
     run_id: str | None = None
     anti_slop: bool = True
     slop_config: object | None = None
+    slop_baseline: bool = True
 
 
 class Engine:
@@ -128,6 +129,19 @@ class Engine:
         self._hidden_summary: list[str] = []
         self._hidden_failures: list[str] = []
         self._vault_hash: str | None = None
+        self._slop_known: set[str] | None = None
+        self._slop_paths: set[str] = set()
+        self._slop_revert_files: list[str] = []
+        self._turn_source: str = ""
+        self._slop_quality: dict = {
+            "ok": True,
+            "blocking": False,
+            "score": 100,
+            "grade": "A",
+            "errors": 0,
+            "warnings": 0,
+            "suppressed": 0,
+        }
 
     # ------------------------------------------------------------------ prepare
 
@@ -230,6 +244,7 @@ class Engine:
         self.state = state
         self.paths = paths
         self.events = events
+        self._capture_slop_baseline()
         return state
 
     @classmethod
@@ -370,10 +385,12 @@ class Engine:
         state = self.state or self.prepare()
         assert self.paths is not None and self.events is not None
         started = time.time()
+        self._capture_slop_baseline()
 
         try:
             while True:
                 kick = state.kicks
+                self._turn_source = git_head(self.repo)
                 prompt = self._next_prompt
                 prompt_path = self.paths.kick_prompt(kick, state.generation)
                 prompt_path.write_text(prompt, encoding="utf-8")
@@ -423,7 +440,23 @@ class Engine:
                         self.repo, state.test_globs, state.baseline_commit
                     )
                     self.events.append("tamper_revert", kick=kick, files=restored)
-                diag = self._budget_guard(diag, state)
+                policy = self._slop_policy()
+                abort_slop = diag is Diagnosis.SLOP and policy == "abort"
+                if diag is Diagnosis.SLOP and policy == "revert":
+                    from .revert import restore_files
+
+                    outcome = restore_files(
+                        self.repo,
+                        self._slop_paths,
+                        source=self._turn_source or "HEAD",
+                    )
+                    self._slop_revert_files = [
+                        *outcome["restored"],
+                        *outcome["removed"],
+                    ]
+                    self.events.append("slop_revert", kick=kick, **outcome)
+                if not abort_slop:
+                    diag = self._budget_guard(diag, state)
                 self._record(kick, obs, diag, turn, prompt_path)
 
                 self.events.append(
@@ -447,6 +480,11 @@ class Engine:
                     streak=obs.same_fingerprint_streak,
                 )
 
+                if abort_slop:
+                    self.events.append(
+                        "slop_abort", kick=kick, files=sorted(self._slop_paths)
+                    )
+                    return self._finish(state, diag, started)
                 if diag in TERMINAL:
                     return self._finish(state, diag, started)
 
@@ -470,7 +508,9 @@ class Engine:
                     self.config.test_command,
                     state.kicks,
                     state.max_kicks,
-                    notes=self._notes(diag, obs),
+                    notes=self._notes(
+                        diag, obs, reverted=self._slop_revert_files
+                    ),
                     hidden_failures=self._hidden_failures,
                     hidden_summary=self._hidden_summary,
                 )
@@ -687,41 +727,125 @@ class Engine:
             slop_blocking=slop_blocking,
         )
 
+    def _default_slop_config(self):
+        """Default v2 anti-slop policy: every family on, kick on error."""
+        from .gate import AntiSlopConfig
+
+        return AntiSlopConfig(
+            enable_core=True,
+            enable_tests=True,
+            enable_types=True,
+            enable_comments=True,
+            enable_arch=True,
+            enable_dead_code=True,
+            enable_deps=True,
+            enable_security=True,
+        )
+
+    def _slop_config(self):
+        return self.config.slop_config or self._default_slop_config()
+
+    def _slop_policy(self) -> str:
+        if not self.config.anti_slop:
+            return "kick"
+        policy = getattr(self._slop_config(), "on_violation", "kick")
+        return policy if policy in {"kick", "revert", "abort"} else "kick"
+
+    def _capture_slop_baseline(self) -> None:
+        """Snapshot legacy debt before the first agent turn.
+
+        This is distinct from the committed baseline JSON: it lets a run touch
+        an old file without inheriting all of that file's pre-existing slop.
+        """
+        if not self.config.anti_slop or not self.config.slop_baseline:
+            self._slop_known = set()
+            return
+        if self._slop_known is not None:
+            return
+        self._slop_known = set()
+        try:
+            from .gate import baseline_keys, fingerprint_set, scan_paths
+
+            state = self.state
+            result = scan_paths(
+                self.repo,
+                config=self._slop_config(),
+                changed_only=False,
+                baseline_ref=state.baseline_commit if state is not None else "HEAD",
+                use_baseline=True,
+            )
+            self._slop_known = fingerprint_set(result.findings) | baseline_keys(
+                result.findings
+            )
+            if self.events is not None:
+                self.events.append(
+                    "slop_baseline",
+                    findings=len(result.findings),
+                    fingerprints=len(self._slop_known),
+                    scanned=result.files_scanned,
+                )
+        except Exception as exc:  # noqa: BLE001 - baseline is best-effort
+            if self.events is not None:
+                self.events.append("slop_scan_error", error=str(exc)[:300])
+
     def _scan_slop(self) -> tuple[bool, list[str], bool]:
         """Run the anti-slop gate on files changed since the run baseline.
 
         A scanner failure is deliberately non-fatal: the quality gate must
         never crash an otherwise healthy run.
         """
+        self._slop_revert_files = []
         if not self.config.anti_slop:
+            self._slop_paths = set()
+            self._slop_quality = {
+                "ok": True,
+                "blocking": False,
+                "score": 100,
+                "grade": "A",
+                "errors": 0,
+                "warnings": 0,
+                "suppressed": 0,
+            }
             return True, [], False
+        self._capture_slop_baseline()
         try:
-            from .gate import AntiSlopConfig, scan_paths
+            from .gate import (
+                badge_markdown,
+                grade_for,
+                scan_paths,
+                score_findings,
+                suppress_known,
+            )
 
             state = self.state
             assert state is not None
-            configured = self.config.slop_config
-            if configured is None:
-                configured = AntiSlopConfig(
-                    enable_core=True,
-                    enable_tests=True,
-                    enable_types=True,
-                    enable_comments=True,
-                    enable_arch=True,
-                    enable_dead_code=True,
-                    enable_deps=True,
-                    enable_security=True,
-                )
             result = scan_paths(
                 self.repo,
-                config=configured,
+                config=self._slop_config(),
                 changed_only=True,
                 baseline_ref=state.baseline_commit,
-                use_baseline=True,
+                use_baseline=self.config.slop_baseline,
             )
+            if self._slop_known:
+                merged = suppress_known(result.findings, self._slop_known)
+                if merged:
+                    result.baseline_suppressed += merged
+                    result.score = score_findings(result.actionable)
+                    result.grade = grade_for(result.score)
+                    result.badge = badge_markdown(result.score)
         except Exception as exc:  # noqa: BLE001 - gate must never break the loop
             if self.events is not None:
                 self.events.append("slop_scan_error", error=str(exc)[:300])
+            self._slop_paths = set()
+            self._slop_quality = {
+                "ok": True,
+                "blocking": False,
+                "score": 100,
+                "grade": "A",
+                "errors": 0,
+                "warnings": 0,
+                "suppressed": 0,
+            }
             return True, [], False
 
         if result.errors:
@@ -748,6 +872,18 @@ class Engine:
                 line += f" | Fix: {finding.suggestion}"
             findings.append(line)
         blocking = any(finding.severity == "error" for finding in ordered)
+        self._slop_paths = {
+            finding.path for finding in ordered if finding.severity == "error"
+        }
+        self._slop_quality = {
+            "ok": not blocking,
+            "blocking": blocking,
+            "score": result.score,
+            "grade": result.grade,
+            "errors": result.errors_count,
+            "warnings": result.warnings_count,
+            "suppressed": result.baseline_suppressed,
+        }
         return not blocking, findings, blocking
 
     # -------------------------------------------------------------------- record
@@ -819,6 +955,10 @@ class Engine:
             name: result.to_dict() for name, result in self._hidden_results.items()
         }
         ledger["vault_tamper"] = obs.vault_tamper
+        ledger["quality"] = {
+            **self._slop_quality,
+            "reverted": list(self._slop_revert_files),
+        }
         write_json_atomic(self.paths.ledger, ledger)
 
         (self.paths.kick_dir(kick, self.state.generation) / "stdout.log").write_text(
@@ -857,6 +997,8 @@ class Engine:
                     "ok": obs.slop_ok,
                     "blocking": obs.slop_blocking,
                     "findings": obs.slop_findings[:20],
+                    **self._slop_quality,
+                    "reverted": list(self._slop_revert_files),
                 },
             },
         )
@@ -939,7 +1081,11 @@ class Engine:
         return diag
 
     @staticmethod
-    def _notes(diag: Diagnosis, obs: Observation) -> list[str]:
+    def _notes(
+        diag: Diagnosis,
+        obs: Observation,
+        reverted: list[str] | None = None,
+    ) -> list[str]:
         notes: list[str] = []
         if diag is Diagnosis.TAMPER:
             notes.append("You modified test files. Waker restored the baseline. Do not edit tests.")
@@ -952,6 +1098,10 @@ class Engine:
         if diag is Diagnosis.FALSE_DONE:
             notes.append("You claimed done but the gate is still red. Only claim done when tests are actually green.")
         if diag is Diagnosis.SLOP:
+            if reverted:
+                notes.append(
+                    "Waker restored violating files: " + ", ".join(reverted[:10])
+                )
             notes.append(
                 "Anti-slop gate blocked DONE. Fix every ERROR below; warnings are advisory:"
             )

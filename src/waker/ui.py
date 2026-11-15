@@ -9,6 +9,7 @@ from typing import Any
 
 from .models import Task
 from .state import RunPaths, RunState, read_json
+from .tui import quality_line
 
 ICONS = {
     "done": "\u2705",
@@ -82,6 +83,8 @@ def render_markdown(state: RunState, ledger: dict[str, Any]) -> str:
         f"\U0001F501 {state.kicks}/{state.max_kicks}  \U0001F9EA {test_label}"
         + (f"  \U0001F4B0 ${state.cost_usd:.4f}" if state.cost_usd else ""),
     ]
+    if ledger.get("quality"):
+        lines.append(quality_line(ledger))
     hidden = ledger.get("hidden") or {}
     if hidden:
         summary = "  ".join(
@@ -144,6 +147,8 @@ def build_rich(state: RunState, ledger: dict[str, Any]):
     )
     body = Table.grid(padding=(0, 1))
     body.add_row(header)
+    if ledger.get("quality"):
+        body.add_row(Text(quality_line(ledger), style="bold green" if not ledger["quality"].get("errors") else "bold red"))
     hidden = ledger.get("hidden") or {}
     if hidden:
         summary = "  ".join(

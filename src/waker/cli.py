@@ -133,6 +133,7 @@ def cmd_run(args) -> int:
         engine = Engine.from_run(
             args.repo, args.resume, adapter=adapter, max_kicks=args.max_kicks
         )
+        engine.config.slop_baseline = args.slop_baseline
         result = engine.run()
         print(render_markdown(RunState.load(paths.state), read_json(paths.ledger)))
         print(f"\nreport: {result.report_path}")
@@ -175,6 +176,7 @@ def cmd_run(args) -> int:
         vault_id=args.vault,
         vault_dir=args.vault_dir,
         run_id=args.run_id,
+        slop_baseline=args.slop_baseline,
     )
     result = Engine(config, _build_adapter(args)).run()
     paths = RunPaths(args.repo, result.run_id)
@@ -220,6 +222,8 @@ def _run_flags(args) -> list[str]:
         flags.append("--no-job")
     if args.no_lint:
         flags.append("--no-lint")
+    if not args.slop_baseline:
+        flags.append("--no-baseline")
     return flags
 
 
@@ -335,6 +339,7 @@ def cmd_status(args) -> int:
             "max_cost_usd": state.max_cost_usd,
             "tasks": ledger.get("tasks", {}),
             "test": ledger.get("test", {}),
+            "quality": ledger.get("quality", {}),
         }
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
@@ -398,6 +403,11 @@ def _audit_exit(result, strict: bool) -> int:
 def cmd_audit(args) -> int:
     base = AntiSlopConfig()
     overrides: dict = {}
+    baseline_ref = args.baseline or "HEAD"
+    baseline_file = args.baseline_file
+    if baseline_file is None and str(baseline_ref).lower().endswith(".json"):
+        baseline_file = baseline_ref
+        baseline_ref = "HEAD"
     if args.max_function_lines is not None:
         overrides["max_function_lines"] = args.max_function_lines
     if args.max_module_lines is not None:
@@ -412,8 +422,8 @@ def cmd_audit(args) -> int:
         overrides["paths"] = tuple(args.paths)
     if args.exclude:
         overrides["exclude"] = (*base.exclude, *args.exclude)
-    if args.baseline_file:
-        overrides["baseline"] = args.baseline_file
+    if baseline_file:
+        overrides["baseline"] = baseline_file
     if args.no_baseline:
         overrides["baseline"] = "off"
     if args.tests:
@@ -446,7 +456,7 @@ def cmd_audit(args) -> int:
             paths=args.paths,
             config=config,
             changed_only=not args.all,
-            baseline_ref=args.baseline,
+            baseline_ref=baseline_ref,
             use_baseline=not args.no_baseline,
         )
     except (OSError, ValueError) as exc:
@@ -647,6 +657,19 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--permission-mode", default=None, help="Claude Code permission mode")
     parser.add_argument("--vault", default=None, help="hidden test vault id (blind)")
     parser.add_argument("--vault-dir", default=None, help="vault base dir (test/CI)")
+    parser.add_argument(
+        "--baseline",
+        dest="slop_baseline",
+        action="store_true",
+        default=True,
+        help="ignore pre-existing anti-slop debt in changed files (default)",
+    )
+    parser.add_argument(
+        "--no-baseline",
+        dest="slop_baseline",
+        action="store_false",
+        help="do not suppress pre-existing anti-slop debt",
+    )
     parser.add_argument("--repo", default=".")
     parser.add_argument("--max-kicks", type=int, default=None)
     parser.add_argument("--max-cost", type=float, default=0.0, help="USD; 0 = disable cost guard")
@@ -747,8 +770,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     audit.add_argument(
         "--baseline",
+        nargs="?",
+        const="HEAD",
         default="HEAD",
-        help="git revision for changed-file detection and growth checks",
+        help="git revision for changed-file detection; a *.json value is treated as a baseline file",
     )
     audit.add_argument(
         "--baseline-file",
