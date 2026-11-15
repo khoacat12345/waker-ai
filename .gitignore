@@ -16,6 +16,7 @@ htmlcov/
 .waker/runs/*
 !.waker/runs/phase*_report.md
 !.waker/runs/v1_final_report.md
+!.waker/anti-slop-baseline.json
 
 # local agent scratch
 .fake_state.json

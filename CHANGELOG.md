@@ -2,6 +2,19 @@
 
 All notable changes to `waker-ai`.
 
+## Unreleased — v2.0.0 development
+
+### Added
+
+- Read-only `waker audit` anti-slop gate (Phase 1): duplicate symbols, silent
+  broad exceptions, cyclomatic complexity, function/module length, copy-paste
+  blocks, file growth, and nesting/parameter warnings.
+- Cleanliness Score 0–100, grade, and shields.io Markdown badge in
+  `waker audit`; JSON output includes the score and findings.
+- Baseline support at `.waker/anti-slop-baseline.json`, with
+  `waker audit --write-baseline`.
+- Static anti-slop fixtures and unit tests.
+
 ## v1.2.0 — 2026-11-15
 
 ### Added

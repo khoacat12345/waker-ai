@@ -20,6 +20,7 @@ from .adapters.pty import PtyAdapter
 from .daemon import serve, start_detached, stop_run
 from .dashboard import serve_dashboard, write_static
 from .engine import Engine, EngineConfig
+from .gate import AntiSlopConfig, baseline_path, scan_paths, write_baseline
 from .models import Task
 from .skill_install import PROVIDERS, install_skill
 from .state import (
@@ -385,6 +386,100 @@ def cmd_detect(args) -> int:
     return 0 if results else 1
 
 
+def cmd_audit(args) -> int:
+    base = AntiSlopConfig()
+    overrides: dict = {}
+    if args.max_function_lines is not None:
+        overrides["max_function_lines"] = args.max_function_lines
+    if args.max_module_lines is not None:
+        overrides["max_module_lines"] = args.max_module_lines
+    if args.max_complexity is not None:
+        overrides["max_cyclomatic_complexity"] = args.max_complexity
+    if args.max_nesting is not None:
+        overrides["max_nesting_depth"] = args.max_nesting
+    if args.max_parameters is not None:
+        overrides["max_parameters"] = args.max_parameters
+    if args.paths:
+        overrides["paths"] = tuple(args.paths)
+    if args.exclude:
+        overrides["exclude"] = (*base.exclude, *args.exclude)
+    if args.baseline_file:
+        overrides["baseline"] = args.baseline_file
+    if args.no_baseline:
+        overrides["baseline"] = "off"
+    try:
+        config = base.with_overrides(**overrides)
+        result = scan_paths(
+            args.repo,
+            paths=args.paths,
+            config=config,
+            changed_only=not args.all,
+            baseline_ref=args.baseline,
+            use_baseline=not args.no_baseline,
+        )
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
+
+    if result.errors:
+        for message in result.errors:
+            print(f"scan error: {message}", file=sys.stderr)
+
+    if args.write_baseline:
+        target = baseline_path(args.repo, config)
+        if target is None:
+            print("error: baseline is disabled (--no-baseline)", file=sys.stderr)
+            return 3
+        write_baseline(target, result.findings)
+        print(f"baseline: {target}")
+        print(f"wrote {len(result.findings)} finding(s)")
+        return 0
+
+    if args.format == "badge":
+        print(result.badge)
+        return 1 if result.errors else 0
+    if args.badge:
+        print(result.badge)
+        return 1 if result.errors else 0
+    if args.format == "json":
+        print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    else:
+        actionable = [finding for finding in result.findings if not finding.baseline]
+        print(
+            f"Anti-Slop Audit — {len(actionable)} finding(s) "
+            f"({result.errors_count} blocking, {result.warnings_count} warning)"
+        )
+        print(f"Cleanliness: {result.score}/100 ({result.grade})")
+        if result.files_scanned or result.files_skipped:
+            print(
+                f"Files: {result.files_scanned} scanned, "
+                f"{result.files_skipped} skipped · {result.duration_ms} ms"
+            )
+        if result.baseline_suppressed:
+            print(f"Baseline: {result.baseline_suppressed} legacy finding(s) suppressed")
+        order = {"error": 0, "warning": 1, "info": 2}
+        actionable.sort(
+            key=lambda finding: (
+                order.get(finding.severity, 3),
+                finding.path,
+                finding.line,
+                finding.rule,
+            )
+        )
+        for finding in actionable:
+            print(
+                f"{finding.path}:{finding.line}:{finding.col}  "
+                f"{finding.rule}  {finding.severity}  {finding.message}"
+            )
+            if finding.suggestion:
+                print(f"  Fix: {finding.suggestion}")
+        print(result.badge)
+    blocking = result.errors_count
+    if blocking or (args.strict and result.warnings_count):
+        return 2
+    return 1 if result.errors else 0
+
+
 def cmd_vault_init(args) -> int:
     vault = Vault.create(args.repo, vault_id=args.id, base_dir=args.vault_dir)
     payload = {
@@ -600,6 +695,69 @@ def build_parser() -> argparse.ArgumentParser:
     detect_parser.add_argument("--repo", default=".")
     detect_parser.add_argument("--json", action="store_true")
     detect_parser.set_defaults(func=cmd_detect)
+
+    audit = sub.add_parser(
+        "audit", help="read-only anti-slop audit and cleanliness score"
+    )
+    audit.add_argument(
+        "--anti-slop",
+        action="store_true",
+        help="run the core anti-slop gate (default)",
+    )
+    audit.add_argument(
+        "--all",
+        action="store_true",
+        help="scan every Python file instead of only changed files",
+    )
+    audit.add_argument(
+        "--changed-only",
+        action="store_true",
+        help="scan changed files only (default)",
+    )
+    audit.add_argument(
+        "--baseline",
+        default="HEAD",
+        help="git revision for changed-file detection and growth checks",
+    )
+    audit.add_argument(
+        "--baseline-file",
+        default=None,
+        help="baseline JSON path (default: .waker/anti-slop-baseline.json)",
+    )
+    audit.add_argument(
+        "--no-baseline",
+        action="store_true",
+        help="ignore the baseline file",
+    )
+    audit.add_argument(
+        "--write-baseline",
+        action="store_true",
+        help="write current findings to the baseline file",
+    )
+    audit.add_argument(
+        "--format",
+        choices=["md", "json", "badge"],
+        default="md",
+    )
+    audit.add_argument(
+        "--badge",
+        action="store_true",
+        help="print only the Markdown badge",
+    )
+    audit.add_argument(
+        "--strict",
+        action="store_true",
+        help="make warnings exit 2 as well",
+    )
+    audit.add_argument("--paths", action="append", default=None)
+    audit.add_argument("--exclude", action="append", default=None)
+    audit.add_argument("--max-function-lines", type=int, default=None)
+    audit.add_argument("--max-module-lines", type=int, default=None)
+    audit.add_argument("--max-complexity", type=int, default=None)
+    audit.add_argument("--max-nesting", type=int, default=None)
+    audit.add_argument("--max-parameters", type=int, default=None)
+    audit.add_argument("--repo", default=".")
+    audit.set_defaults(func=cmd_audit)
 
     vault_parser = sub.add_parser("vault", help="Hidden test vault (blind evaluation)")
     vault_sub = vault_parser.add_subparsers(dest="vault_command", required=True)

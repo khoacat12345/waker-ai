@@ -1,7 +1,7 @@
 # Waker Anti-Slop AI Code Guardian — Architecture & Feature Specification
 
 **Status:** proposed (design)
-**Target:** v2.0.0 (opt-in preview in v1.3.0)
+**Target:** **v2.0.0 — default-on** (no v1.3 intermediate)
 **Implementation plan:** [`ANTI_SLOP_ROADMAP.md`](ANTI_SLOP_ROADMAP.md)
 **Owner:** Waker maintainers
 **Scope:** Python AST quality gate for AI-generated code, contract schema,
@@ -10,10 +10,10 @@ engine enforcement, CLI diagnostics, packaging, migration.
 support; LLM-based style judgement; runtime profiling.
 
 > **Version note.** The current stable release is **v1.2.0** (2026-11-15). The
-> old `v0.3.0 -> v1.0.0` roadmap is historical; publishing v1.0.0 after v1.2.0
-> would be a downgrade. This spec therefore targets **v2.0.0** as the major
-> release, with an opt-in **v1.3.0** preview. If only one release is desired,
-> ship v2.0.0.
+> Product Owner decision (2026-11-15) is to ship the Guardian **directly in
+> v2.0.0 with default-on gates**; the earlier v1.3 opt-in preview is cancelled.
+> Users who need the old behavior pin v1.2.0. The old
+> `v0.3.0 -> v1.0.0` roadmap is historical; do not publish v1.0.0 after v1.2.0.
 
 ---
 
@@ -160,7 +160,7 @@ class ScanResult:
 # waker/gate/config.py
 @dataclass(frozen=True)
 class AntiSlopConfig:
-    enabled: bool = False                 # v1.3 preview: opt-in; v2: default on
+    enabled: bool = True                  # v2 default; Phase 1 audit preview
     max_function_lines: int = 100
     max_module_lines: int = 1000
     max_cyclomatic_complexity: int = 15
@@ -332,12 +332,12 @@ Defaults:
 
 ---
 
-## 4A. Extended Guardian Families (v1.3 preview → v2.0)
+## 4A. Extended Guardian Families (v2.0 default-on)
 
 The core `SLOP001–008` rules catch mechanical slop. The four families below
 close the higher-level escape routes: fake tests, layer inversion, dead code,
-and dependency poisoning. They are **opt-in in v1.3** and **default-on for new
-`version: 2` contracts in v2.0**.
+and dependency poisoning. They are **default-on in v2.0** for new contracts;
+Phase 1 of the roadmap ships the read-only `waker audit` preview first.
 
 Design rules for every family:
 
@@ -898,7 +898,7 @@ discipline it already uses internally.
 
 ---
 
-## 5. Contract schema (v2, backward compatible in v1.3)
+## 5. Contract schema (v2, backward compatible with v1.x)
 
 ### 5.1 Recommended YAML
 
@@ -940,7 +940,7 @@ constraints:
       ban_duplicate_symbols: true
 ```
 
-### 5.1.1 Extended gates block (v1.3 opt-in, v2 canonical)
+### 5.1.1 Extended gates block (v2 canonical)
 
 ```yaml
 version: 2
@@ -1036,7 +1036,7 @@ gates:
 ```
 
 `anti_slop` at the top level remains accepted as an alias for
-`gates.anti_slop` in v1.3/v2.0; `gates` is canonical. Per-family `on_violation`
+`gates.anti_slop` in v1.x/v2.0; `gates` is canonical. Per-family `on_violation`
 overrides the global policy. A family with `enabled: false` is omitted from
 the run and from `waker lint` blocking (but still shown by
 `waker audit --all-gates` if explicitly requested).
@@ -1385,11 +1385,10 @@ The zero-dependency AST gate is **Python-only**. For JS/TS/Rust, Waker can:
 - The original `v0.3.0 -> v1.0.0` roadmap is historical; do not publish v1.0.0
   after v1.2.0.
 
-### 8.2 Proposed train
+### 8.2 Release train
 
 | Version | Content | Default |
 |---|---|---|
-| **v1.3.0** | `waker.gate`, `waker audit`, JSON/SARIF, opt-in `gates` schema, `SLOP` diagnosis, test-integrity + type-evidence warnings | core anti-slop **off** |
 | **v2.0.0** | default-on for new `version: 2` contracts; core + test + type-evidence + comments + architecture + dead-code + dependencies + security families; rollback policies | on for new contracts |
 | **v2.1.0** | API/async/coupling rules, JS/TS plugin interface, hunk-level revert, mutation/coverage adapters | opt-in |
 
@@ -1400,8 +1399,8 @@ maintained for one release cycle.
 
 - v1.x `constraints` with `check`/`verify` remain valid.
 - v2 accepts schema v1 contracts; `waker lint` prints a migration hint.
-- New `gates` block is optional in v1.3, default-on for new `version: 2`
-  contracts in v2; top-level `anti_slop` remains an alias.
+- New `gates` block is default-on for new `version: 2` contracts in v2; top-level
+  `anti_slop` remains an alias.
 - Existing repos can opt out per family with `<family>.enabled: false` or the
   global `WAKER_QUALITY_GATE=0`.
 - Baseline old violations with `waker audit --write-baseline --all-gates`
@@ -1543,7 +1542,7 @@ For v2:
 | Performance on huge diffs | changed-only, content-hash cache, limits, soft timeout |
 | Gate bug bricks runs | scanner errors are non-fatal; tests + fallback to verify-only |
 | “Slop” becomes a style war | rule IDs are narrow and mechanical; no formatting/naming rules |
-| v2 breaks existing contracts | v1.3 opt-in, schema v1 accepted, baseline, env opt-out |
+| v2 breaks existing contracts | v2 default-on with schema v1 accepted, baseline, env/family opt-out, v1.2 pin |
 
 **Key decisions:**
 
@@ -1552,8 +1551,8 @@ For v2:
 2. Quality is blocking only for **new** findings; legacy is baselined.
 3. `waker.gate` is stdlib-only; Rich stays in the CLI layer.
 4. Python AST only in v2; no false multi-language claims.
-5. Current version is v1.2.0; the anti-slop major release is **v2.0.0**, with
-   v1.3.0 as the opt-in preview.
+5. Current version is v1.2.0; the Guardian ships directly in **v2.0.0**;
+   Phase 1 is the read-only `waker audit` preview.
 6. Mock ratio is a **warning**, never a hard defect; the hard test rules are
    structural false-green facts.
 7. Import direction is **explicit config**, not a universal “core only stdlib”.
@@ -1576,8 +1575,8 @@ For v2:
 | 3 | Contract schema + engine `SLOP` + wake prompt | fake-agent E2E, no regression |
 | 4 | Dead-code + dependency + security scanners | fixtures, redaction, offline mode |
 | 5 | Baseline, suppression, TUI/status, perf budget | CLI acceptance, 200-file scan |
-| 6 | v1.3.0 opt-in release | PyPI, update notifier, docs |
-| 7 | v2.0.0 default-on + migration | migration guide, baseline onboarding |
+| 6 | v2.0.0 default-on release | PyPI, update notifier, docs |
+| 7 | v2.1 optional extensions | JS/TS adapter, score refinements, auto-fix only after review |
 
 ---
 
@@ -1642,7 +1641,7 @@ growth_min_lines            30
 on_violation                kick
 changed_only                true
 
-# extended families (v1.3 preview / v2 default)
+# extended families (v2 default)
 test_integrity.min_assertions_per_test   1
 test_integrity.max_mock_ratio            0.70 (warning)
 test_integrity.ban_mock_of_sut           true

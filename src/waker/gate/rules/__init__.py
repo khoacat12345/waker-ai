@@ -1,0 +1,1 @@
+"""Core anti-slop rules."""

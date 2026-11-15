@@ -1,11 +1,31 @@
 # Waker Anti-Slop Guardian — Phased Implementation Plan
 
-**Status:** proposed — waiting for approval
+**Status:** Phase 0 + Phase 1 implemented — awaiting acceptance
 **Baseline:** waker-ai v1.2.0
-**Target:** v1.3.0 (opt-in preview) → v2.0.0 (default-on)
+**Target:** **v2.0.0 — Anti-Slop default-on** (no v1.3 intermediate)
 **Design:** [`docs/ANTI_SLOP_SPEC.md`](ANTI_SLOP_SPEC.md)
 **Implementation plan:** [`docs/ANTI_SLOP_ROADMAP.md`](ANTI_SLOP_ROADMAP.md)
 **Reference repos:** `C:\Users\tuank\anti-slop-refs` (review-only, outside this repo)
+
+## Product Owner decisions (2026-11-15)
+
+These override the earlier v1.3-preview plan:
+
+1. Ship **v2.0.0 directly**; Anti-Slop is default-on. Users who need old
+   behavior pin v1.2.0. No v1.3.0.
+2. **Blocking:** `SLOP001/005`, `TEST001-005`, `TYPE001-012`,
+   `ARCH001-004`, `DEAD001-002`, `PKG001-002`, `SEC001-007`.
+   **Warning:** `COMMENT001-003`, `RES001-003`, `ASYNC001`,
+   `COUPLE001-002`, plus mock ratio, growth, nesting/params.
+3. Thresholds: function 100 logical lines, module 1000, complexity 15,
+   mock ratio 0.70 warning, growth >15% and >30 lines.
+4. Default violation policy: **kick**. `revert`/`abort` are opt-in config.
+5. Core is Python stdlib only; TS/JS is an external adapter in a later release.
+6. Commit `.waker/anti-slop-baseline.json`; cache stays ignored.
+7. Comment style is warning; placeholders/stubs and unexplained
+   `# type: ignore`/`# noqa` are errors.
+8. Cleanliness Score 0–100 and Markdown badge ship in Phase 1; auto-fix is
+   deferred to v2.1.
 
 ---
 
@@ -17,8 +37,9 @@
    library; Rich stays in the CLI layer.
 3. **No LLM in the gate.** Deterministic AST facts only. Optional mutation/
    coverage/type checks are explicit contract commands.
-4. **No breaking v1 contracts.** v1.3 is opt-in and default-off; v2.0 accepts
-   both schema v1 and v2.
+4. **No breaking v1 contracts.** v2.0 is default-on for new contracts but
+   accepts schema v1; v1.2 users can pin the old release; baseline/opt-out is
+   available.
 5. **No destructive default.** `on_violation: kick` is the default; `revert`
    and `abort` are explicit policies.
 6. **Every phase ends with tests, docs, a separate commit, and a review
@@ -31,23 +52,23 @@
 ```
 Phase 1-3: passive gate + `waker audit` (safe, read-only)
 Phase 4-5: active enforcement in the run loop (SLOP → kick/rollback)
-Phase 6:   v1.3.0 opt-in release
-Phase 7:   v2.0.0 default-on + migration
+Phase 6:   v2.0.0 default-on release
+Phase 7:   v2.1 optional extensions
 ```
 
 Gate families:
 
-| Family | Rules | Default in v1.3 | Default in v2.0 |
+| Family | Rules | Phase 1 audit | v2.0 default |
 |---|---|---|---|
-| Core anti-slop | `SLOP001–008` | off (opt-in) | on (new contracts) |
-| Test integrity | `TEST001–008` | warn | on |
-| Type evidence | `TYPE001–012` | warn | on for new/changed |
-| Comments/suppression | `COMMENT/SUPPRESS/STUB` | warn | warn/on for placeholders |
-| Architecture | `ARCH001–004` | off | on |
-| Dead code | `DEAD001–004` | off | on (private-only) |
-| Dependencies | `PKG001–004` | off | on (`allow_new: false`) |
-| Security | `SEC001–007` | off | on |
-| Resource/API/async/coupling | `RES/API/ASYNC/COUPLE` | off | warn |
+| Core anti-slop | `SLOP001–008` | **shipped** | on (new contracts) |
+| Test integrity | `TEST001–008` | not yet | on |
+| Type evidence | `TYPE001–012` | not yet | on for new/changed |
+| Comments/suppression | `COMMENT/SUPPRESS/STUB` | not yet | warn/on for placeholders |
+| Architecture | `ARCH001–004` | not yet | on |
+| Dead code | `DEAD001–004` | not yet | on (private-only) |
+| Dependencies | `PKG001–004` | not yet | on (`allow_new: false`) |
+| Security | `SEC001–007` | not yet | on |
+| Resource/API/async/coupling | `RES/API/ASYNC/COUPLE` | not yet | warn |
 
 ---
 
@@ -125,13 +146,18 @@ CLI:
 
 ```bash
 waker audit [--anti-slop] [--changed-only|--all]
-            [--baseline <rev>] [--format md|json] [--strict]
+            [--baseline <rev>] [--format md|json|badge]
+            [--badge] [--strict] [--write-baseline]
 ```
 
 - `waker audit` is read-only; no `waker run` changes.
-- JSON shape is stable; Markdown has code frames.
+- JSON shape is stable; Markdown has a Cleanliness Score (0–100), grade, and
+  Markdown badge.
 - Exit codes: 0 clean/warn-only, 2 blocking findings, 1 scan error, 3 config.
-- `.waker/quality-cache.json` is ignored; no baseline writes yet.
+- `.waker/quality-cache.json` is ignored; the baseline file is
+  `.waker/anti-slop-baseline.json` (committed).
+- Phase 1 implements only the core anti-slop family (`SLOP000–008`); the other
+  families are Phase 2/3.
 
 Tests:
 
@@ -286,19 +312,19 @@ Tests:
 - Windows/Linux, cp1252 fallback, no console windows.
 - Full E2E with fake agent and hidden vault.
 
-**Checkpoint:** full acceptance; user approves v1.3 release.
+**Checkpoint:** full acceptance; user approves v2.0 release.
 
 ---
 
-### Phase 6 — v1.3.0 opt-in release (1 session)
+### Phase 6 — v2.0.0 default-on release (1 session)
 
-**Goal:** ship the gate as a safe preview.
+**Goal:** ship the Guardian as the default v2 behavior.
 
-- Version bump `1.2.0 → 1.3.0`.
+- Version bump `1.2.0 → 2.0.0`.
 - CHANGELOG + release notes + Agensi zip.
 - Build wheel/sdist; twine check; fresh-venv install.
 - Tag/GitHub release/PyPI; verify workflow and PyPI JSON.
-- Gates default **off**; `waker audit` always available.
+- Gates default **on** for new contracts; v1 contracts get migration hints.
 - Update notifier already shipped in v1.2.0; no new mechanism.
 - Announce only after tests/publish are verified.
 
@@ -306,21 +332,12 @@ Tests:
 
 ---
 
-### Phase 7 — v2.0.0 default-on + migration (2–3 sessions)
+### Phase 7 — v2.1 optional extensions (2–3 sessions)
 
-**Goal:** make the Guardian the default for new contracts without breaking v1.
-
-- Schema v2 `gates` canonical; top-level `anti_slop` alias.
-- New `version: 2` contracts: gates on; v1 contracts: warn/migration hint.
-- Defaults: certain rules block; likely rules warn; baseline required for
-  adoption.
-- `waker lint` migration diagnostics; `waker doctor` gate status.
-- Migration guide + example contracts.
-- v2.0 release, then optional v2.1: JS/TS adapter, score/badge, hunk-level
-  revert, mutation/coverage adapters.
-- **Not core:** auto-fix, auto-delete, LLM judge, 12-language parser.
-
-**Checkpoint:** user approval before v2.0 release.
+- JS/TS adapter (external linter), score/badge refinements, hunk-level revert,
+  mutation/coverage adapters.
+- Auto-fix only after explicit safety review.
+- **Not core:** auto-delete, LLM judge, 12-language parser.
 
 ---
 
@@ -352,7 +369,8 @@ Tests:
 - Branch per phase if the user prefers; otherwise `main` with separate commits.
 - Never mix gate code with engine enforcement in one commit.
 - `problem.md` gets a P-entry for any deferred bug/known limitation.
-- Release only after explicit user approval; v1.3.0 opt-in first.
+- Release only after explicit user approval; v2.0 default-on with baseline
+  onboarding and v1.2 pin documented.
 - Keep the current v1.2.0 working while the gate is developed.
 
 ---
@@ -361,35 +379,33 @@ Tests:
 
 | Phase | Effort (sessions) | User checkpoint |
 |---|---:|---|
-| 0 | 0.5–1 | rule catalog/thresholds |
-| 1 | 2–3 | audit UX |
+| 0 | 0.5–1 | **done** |
+| 1 | 2–3 | **done — awaiting acceptance** |
 | 2 | 2–3 | false-positive review |
 | 3 | 3–4 | gate set/severity |
 | 4 | 3–4 | kick prompt |
 | 5 | 2–3 | rollback/baseline |
-| 6 | 1 | v1.3 release |
-| 7 | 2–3 | v2.0 release |
+| 6 | 1 | v2.0 release |
+| 7 | 2–3 | v2.1 extensions |
 
 Estimates are relative coding sessions, not calendar promises.
 
 ---
 
-## 7. Open decisions (need user approval)
+## 7. Resolved product decisions
 
-1. **v1.3 opt-in vs single v2.0 release.** Recommended: v1.3 opt-in, then v2.0.
-2. **Default v2 gate set.** Recommended: core + test + type + architecture +
-   dead code + dependencies + security; comments warnings; resource/API/async/
-   coupling warnings.
-3. **Thresholds.** 100 function lines, 1000 module lines, complexity 15,
-   mock ratio 0.70 warning, growth 15% + 30 lines.
-4. **Rollback default.** `kick`; `revert`/`abort` opt-in.
-5. **Python-only core.** Recommended; JS/TS via optional adapter later.
-6. **Baseline file.** Commit `.waker/anti-slop-baseline.json`; cache stays
-   ignored.
-7. **Comment rules default.** Warnings, except placeholder comments and
-   unexplained suppressions.
-8. **Score/badge/auto-fix.** Defer to v2.1; do not put in the safety-critical
-   gate.
+Approved by the Product Owner on 2026-11-15:
+
+1. **v2.0.0 direct**, Anti-Slop default-on; no v1.3. Pin v1.2 for old behavior.
+2. Blocking vs warning sets are fixed in section 0; mock ratio/growth/nesting
+   are warnings.
+3. Thresholds: 100 function lines, 1000 module lines, complexity 15, mock
+   ratio 0.70, growth 15% + 30 lines.
+4. Default `kick`; `revert`/`abort` opt-in.
+5. Python stdlib core; TS/JS adapter later.
+6. Commit `.waker/anti-slop-baseline.json`; cache ignored.
+7. Comments warning; placeholders/stubs/unexplained suppression error.
+8. Score + Markdown badge in Phase 1; auto-fix in v2.1.
 
 ---
 

@@ -146,6 +146,31 @@ The check never blocks a command. Disable it with `WAKER_UPDATE_CHECK=0` or
 `NO_UPDATE_NOTIFIER=1`; CI is skipped automatically. It sends no telemetry —
 it only reads the public PyPI JSON metadata.
 
+## Anti-Slop Audit (v2 preview)
+
+`waker audit` is a read-only AST quality gate. It does not modify source or
+touch the run engine.
+
+```bash
+waker audit --anti-slop              # changed files, Markdown + score + badge
+waker audit --all                    # whole tracked tree
+waker audit --format json            # machine-readable findings + score
+waker audit --format badge           # copy-paste Markdown badge
+waker audit --write-baseline         # baseline legacy debt (explicit)
+```
+
+The Cleanliness Score is 0–100 (errors cost 10, warnings 3) and the badge is
+a static shields.io Markdown snippet:
+
+```markdown
+![waker anti-slop](https://img.shields.io/badge/anti--slop-96%2F100-brightgreen)
+```
+
+Phase 1 implements the core rules: duplicate symbols, silent broad exceptions,
+cyclomatic complexity, function/module length, copy-paste blocks, file growth,
+and nesting/parameter warnings. Test/type/architecture/dead-code/dependency/
+security families arrive in Phases 2–3.
+
 ## Blind evaluation (v1.1)
 
 The Architect (chatbox) can write **hidden tests** that the worker never sees:
