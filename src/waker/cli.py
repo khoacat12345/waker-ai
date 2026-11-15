@@ -451,17 +451,57 @@ def cmd_audit(args) -> int:
         overrides["enable_security"] = True
     try:
         config = base.with_overrides(**overrides)
-        result = scan_paths(
-            args.repo,
-            paths=args.paths,
-            config=config,
-            changed_only=not args.all,
-            baseline_ref=baseline_ref,
-            use_baseline=not args.no_baseline,
-        )
+
+        def scan_now():
+            return scan_paths(
+                args.repo,
+                paths=args.paths,
+                config=config,
+                changed_only=not args.all,
+                baseline_ref=baseline_ref,
+                use_baseline=not args.no_baseline,
+            )
+
+        result = scan_now()
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 3
+
+    if args.fix:
+        from .gate import fix_paths
+
+        fixes = fix_paths(args.repo, result.findings, dry_run=args.dry_run)
+        changed = [item for item in fixes if item.changed]
+        label = "would fix" if args.dry_run else "fixed"
+        print(f"autofix: {label} {len(changed)} file(s)", file=sys.stderr)
+        if changed and not args.dry_run:
+            result = scan_now()
+
+    if args.external:
+        from . import evidence as evidence_module
+        from .gate import badge_markdown, grade_for, score_findings
+        from .gate.external import run_external_linters
+
+        if args.paths:
+            external_files = list(args.paths)
+        elif args.all:
+            external_files = [
+                str(path.relative_to(Path(args.repo).resolve()))
+                for path in Path(args.repo).resolve().rglob("*")
+                if path.is_file()
+            ]
+        else:
+            try:
+                external_files = evidence_module.changed_files(args.repo, baseline_ref)
+            except OSError:
+                external_files = []
+        external = run_external_linters(args.repo, external_files)
+        result.findings.extend(external.findings)
+        for message in external.errors:
+            print(f"external: {message}", file=sys.stderr)
+        result.score = score_findings(result.actionable)
+        result.grade = grade_for(result.score)
+        result.badge = badge_markdown(result.score)
 
     if result.errors:
         for message in result.errors:
@@ -839,6 +879,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--all-gates",
         action="store_true",
         help="enable every anti-slop gate family",
+    )
+    audit.add_argument(
+        "--fix",
+        action="store_true",
+        help="apply safe auto-fixes (TYPE007 safety note, single unused imports)",
+    )
+    audit.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="show auto-fix results without writing files",
+    )
+    audit.add_argument(
+        "--external",
+        action="store_true",
+        help="run optional installed oxlint/eslint adapters for JS/TS files",
     )
     audit.add_argument(
         "--strict",
