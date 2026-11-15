@@ -254,6 +254,14 @@ def test_cli_audit_badge(tmp_path: Path, capsys) -> None:
     assert out.startswith("![waker anti-slop]")
 
 
+def test_cli_audit_badge_fails_on_findings(tmp_path: Path, capsys) -> None:
+    write_file(tmp_path, "bad.py", "def parse(x):\n    return x\n\ndef parse(y):\n    return y\n")
+    code = main(["audit", "--all", "--repo", str(tmp_path), "--format", "badge"])
+    out = capsys.readouterr().out.strip()
+    assert code == 2
+    assert "anti--slop-90%2F100-" in out
+
+
 def test_cli_audit_anti_slop_flag_and_badge(tmp_path: Path, capsys) -> None:
     write_file(tmp_path, "clean.py", "def add(x: int) -> int:\n    return x + 1\n")
     code = main(

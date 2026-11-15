@@ -386,6 +386,14 @@ def cmd_detect(args) -> int:
     return 0 if results else 1
 
 
+def _audit_exit(result, strict: bool) -> int:
+    if result.errors:
+        return 1
+    if result.errors_count or (strict and result.warnings_count):
+        return 2
+    return 0
+
+
 def cmd_audit(args) -> int:
     base = AntiSlopConfig()
     overrides: dict = {}
@@ -437,10 +445,10 @@ def cmd_audit(args) -> int:
 
     if args.format == "badge":
         print(result.badge)
-        return 1 if result.errors else 0
+        return _audit_exit(result, args.strict)
     if args.badge:
         print(result.badge)
-        return 1 if result.errors else 0
+        return _audit_exit(result, args.strict)
     if args.format == "json":
         print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     else:
@@ -474,10 +482,7 @@ def cmd_audit(args) -> int:
             if finding.suggestion:
                 print(f"  Fix: {finding.suggestion}")
         print(result.badge)
-    blocking = result.errors_count
-    if blocking or (args.strict and result.warnings_count):
-        return 2
-    return 1 if result.errors else 0
+    return _audit_exit(result, args.strict)
 
 
 def cmd_vault_init(args) -> int:
