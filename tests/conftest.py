@@ -59,6 +59,11 @@ def repo(tmp_path: Path) -> Path:
     return init_repo(tmp_path / "repo")
 
 
+@pytest.fixture(autouse=True)
+def _disable_update_check(monkeypatch):
+    monkeypatch.setenv("WAKER_UPDATE_CHECK", "0")
+
+
 @pytest.fixture()
 def tasks() -> list[Task]:
     return [

@@ -11,7 +11,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__, planner
+from . import __version__, planner, update
 from . import doctor as doctor_module
 from .adapters.claude import ClaudeAdapter
 from .adapters.generic import GenericProcessAdapter
@@ -684,17 +684,21 @@ def main(argv: list[str] | None = None) -> int:
                 pass
     parser = build_parser()
     args = parser.parse_args(argv)
+    notice = update.check_for_update() if update.should_check() else None
     try:
-        return int(args.func(args))
+        code = int(args.func(args))
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
-        return 1
+        code = 1
     except (ValueError, FileExistsError) as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 1
+        code = 1
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 1
+        code = 1
+    if notice:
+        update.print_notice(notice)
+    return code
 
 
 if __name__ == "__main__":  # pragma: no cover

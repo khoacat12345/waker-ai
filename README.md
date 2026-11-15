@@ -129,6 +129,23 @@ Skills are loaded when the chat session starts — restart your CLI after
 installing. A `pip install` cannot write into your agent's config by itself
 (that is a security boundary); `waker setup` is the one-time post-install step.
 
+## Update notifications
+
+`waker` checks PyPI in the background at most once every 6 hours. On an
+interactive terminal it prints a small notice when a newer version is
+available:
+
+```text
+╭──────────────────────────────────────────────────────╮
+│ Update available: 1.2.0 → 1.2.1                      │
+│ Run: pip install --upgrade waker-ai                  │
+╰──────────────────────────────────────────────────────╯
+```
+
+The check never blocks a command. Disable it with `WAKER_UPDATE_CHECK=0` or
+`NO_UPDATE_NOTIFIER=1`; CI is skipped automatically. It sends no telemetry —
+it only reads the public PyPI JSON metadata.
+
 ## Blind evaluation (v1.1)
 
 The Architect (chatbox) can write **hidden tests** that the worker never sees:

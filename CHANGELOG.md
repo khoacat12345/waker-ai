@@ -2,6 +2,20 @@
 
 All notable changes to `waker-ai`.
 
+## v1.2.0 — 2026-11-15
+
+### Added
+
+- Non-blocking PyPI update notifier: reads a 6-hour cache, refreshes it in a
+  daemon thread, and prints a yellow banner on interactive terminals when a
+  newer version exists. Disabled in CI, with `WAKER_UPDATE_CHECK=0`, or
+  `NO_UPDATE_NOTIFIER`; no telemetry.
+- ASCII fallback for legacy Windows consoles.
+
+### Tests
+
+- Full suite green (1 Windows-only skip).
+
 ## v1.1.3 — 2026-11-10
 
 ### Changed
