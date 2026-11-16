@@ -2,8 +2,28 @@
 
 > **Slogan:** "Never let your AI coding agent sleep on the job again."
 > **Định vị:** Giám sát viên (Watchdog & Supervisor) độc lập cho các AI coding agent CLI.
-> **Trạng thái:** Design chốt — sẵn sàng triển khai Phase 1.
+> **Trạng thái:** Tài liệu thiết kế lịch sử (v0.1). Anti-Slop Phase 0–7 đã hoàn tất trong v2.0.0.
 > **Ngày chốt:** 07/11/2026
+>
+> **Implementation status (2026-11-16):** Phase 0–7 of the Anti-Slop roadmap
+> are **[x] COMPLETED** and included in v2.0.0. See
+> [`docs/ANTI_SLOP_ROADMAP.md`](docs/ANTI_SLOP_ROADMAP.md).
+>
+> **Deferred to v2.1 Roadmap:** `test_writer` red→green enforcement,
+> `depends_on` enforcement, `fail_to_pass` baseline sets, Phase 6.5 coverage
+> audit, notifications, `--yes` contract confirmation, hunk-level revert,
+> mutation/coverage adapters, API/async/coupling rules, and multi-repo.
+>
+> Anti-Slop phase checklist:
+>
+> - [x] Phase 0 — contract freeze — COMPLETED
+> - [x] Phase 1 — `waker.gate` core + `waker audit` — COMPLETED
+> - [x] Phase 2 — test/type/comment guards — COMPLETED
+> - [x] Phase 3 — architecture/dead code/dependencies/security + SARIF — COMPLETED
+> - [x] Phase 4 — engine enforcement and wake loop — COMPLETED
+> - [x] Phase 5 — baseline/rollback/TUI — COMPLETED
+> - [x] Phase 6 — v2.0.0 release packaging — COMPLETED
+> - [x] Phase 7 — experimental external adapters + basic auto-fix — COMPLETED
 
 ---
 
@@ -287,6 +307,8 @@ Xem §7.
 
 ### Phase 6.5 — Requirement Coverage Audit (trước khi báo DONE)
 
+**Status:** Deferred to v2.1 Roadmap.
+
 ```
 input : prompt gốc + tasks.frozen.yaml + evidence.json + git diff --stat
 hỏi   : "mỗi mệnh đề trong prompt gốc có map tới task nào đã có evidence không?
@@ -488,6 +510,8 @@ Nếu chỉ kiểm "test tồn tại và pass", agent sẽ viết `assert True`.
 | ≥ N assert / không `skip`/`pass` rỗng | test giả |
 | Sau khi implement → **pass** (xanh) | đúng nghĩa red→green |
 
+**Status:** Deferred to v2.1 Roadmap.
+
 ### 10.3 waker không tự viết test
 
 Ba đường hợp lệ:
@@ -520,6 +544,8 @@ taskkill /PID <pid> /T /F
 hoặc dùng Job Object (`CREATE_NEW_PROCESS_GROUP` + assign job) để OS tự dọn.
 
 ### 11.2 Thông báo
+
+**Status:** Deferred to v2.1 Roadmap.
 
 - Windows toast notification
 - Beep (tuỳ chọn)

@@ -1,19 +1,38 @@
 # Waker Anti-Slop AI Code Guardian — Architecture & Feature Specification
 
-**Status:** proposed (design)
-**Target:** **v2.0.0 — default-on** (no v1.3 intermediate)
+**Status:** **v2.0.0 RELEASE APPROVED - Phases 0-7 [x] COMPLETED** (Phase 7 experimental extensions included)
+**Target:** **v2.0.0 — default-on**
 **Implementation plan:** [`ANTI_SLOP_ROADMAP.md`](ANTI_SLOP_ROADMAP.md)
 **Owner:** Waker maintainers
 **Scope:** Python AST quality gate for AI-generated code, contract schema,
 engine enforcement, CLI diagnostics, packaging, migration.
-**Non-goals:** replacing pytest/ruff/mypy; auto-rewriting code; full JS/TS AST
-support; LLM-based style judgement; runtime profiling.
+**Non-goals:** replacing pytest/ruff/mypy; auto-rewriting code beyond opt-in
+safe fixes; full JS/TS AST support; LLM-based style judgement; runtime profiling.
 
-> **Version note.** The current stable release is **v1.2.0** (2026-11-15). The
-> Product Owner decision (2026-11-15) is to ship the Guardian **directly in
-> v2.0.0 with default-on gates**; the earlier v1.3 opt-in preview is cancelled.
-> Users who need the old behavior pin v1.2.0. The old
-> `v0.3.0 -> v1.0.0` roadmap is historical; do not publish v1.0.0 after v1.2.0.
+> **Version note.** v2.0.0 is release-approved (2026-11-16); the package is
+> built and `twine check` validated, with publish/tagging pending. The Guardian
+> is default-on with an opt-out and baseline onboarding. Phase 7 external
+> ESLint/Oxlint adapters and basic safe auto-fix are included as opt-in
+> experimental extensions. v2.1 Roadmap items (hunk-level revert,
+> mutation/coverage adapters, API/async/coupling rules, editor integrations)
+> are deferred.
+
+---
+
+## Implementation status — v2.0.0
+
+- [x] **Phase 0** — contract/rule catalog frozen.
+- [x] **Phase 1** — `waker.gate` core, `waker audit`, score/badge, baseline.
+- [x] **Phase 2** — test, type, comment/suppression/stub guards.
+- [x] **Phase 3** — architecture, dead code, dependencies, security, SARIF.
+- [x] **Phase 4** — engine `Diagnosis.SLOP` and wake-prompt enforcement.
+- [x] **Phase 5** — baseline, selective rollback, abort, quality TUI.
+- [x] **Phase 6** — v2.0.0 packaging and documentation.
+- [x] **Phase 7** — experimental external JS/TS adapters and basic safe auto-fix.
+
+**Deferred to v2.1 Roadmap:** API/async/coupling rules, hunk-level revert,
+mutation/coverage adapters, editor integrations, and optional score/badge
+refinements.
 
 ---
 
@@ -608,6 +627,9 @@ broader coverage.
 
 ### 4A.6 Resource, API, Async, and Coupling Guards (optional)
 
+**Status: Deferred to v2.1 Roadmap.** These rules are specified here but are
+not part of the v2.0.0 implementation.
+
 | ID | Rule | Confidence | Default |
 |---|---|---|---|
 | `RES001` | File/socket opened without a context manager | likely | warning |
@@ -748,10 +770,11 @@ closed in this revision:
 2. **Comment/suppression slop** — obvious comments, placeholders, unjustified
    suppressions — the core thesis of `sloplint`/`aislop`. See §4A.11.
 
-`Waker spec` means design coverage in this document; the **v1.2.0 code** does not
-implement the gate yet. Multi-language (TS/JS), auto-fix, scoring/badges, and
-editor hooks are **intentional non-goals for the zero-dependency Python core**;
-integrate them as optional adapters/commands rather than reimplementing 50 rules.
+`Waker spec` means design coverage in this document; the **v2.0.0 code**
+implements the gate. Multi-language (TS/JS) support is delivered through the
+opt-in external adapters from Phase 7; hunk-level revert, mutation/coverage
+adapters, and editor hooks are **Deferred to v2.1 Roadmap** rather than being
+folded into the zero-dependency Python core.
 
 ### 4A.10 Type Evidence Guard (`TYPE001–TYPE012`)
 
@@ -1217,8 +1240,8 @@ valid fix; record the family and checkpoint in the event.
    loop blindly.
 
 Do **not** `git reset --hard`: it would destroy unrelated valid work and
-interfere with the agent's session. A hunk-level surgical revert is deferred;
-file-level revert is predictable and documented.
+interfere with the agent's session. A hunk-level surgical revert is
+**Deferred to v2.1 Roadmap**; file-level revert is predictable and documented.
 
 ---
 
@@ -1371,7 +1394,9 @@ except ImportError:  # waker: ignore[SLOP002] reason="optional accelerator"
 
 ### 7.4 Multi-language boundary
 
-The zero-dependency AST gate is **Python-only**. For JS/TS/Rust, Waker can:
+The zero-dependency AST gate is **Python-only**. For JS/TS, v2.0.0 ships
+opt-in external `Oxlint`/`ESLint` adapters and the `waker audit --external`
+flag. For other languages, Waker can:
 - run external commands as **contract constraints** (`check: "npx eslint ..."`),
 - support an optional future plugin interface (`waker-gate-<lang>`), and
 - keep “anti-slop” scope honest: do not claim AST coverage for languages we do
@@ -1383,7 +1408,9 @@ The zero-dependency AST gate is **Python-only**. For JS/TS/Rust, Waker can:
 
 ### 8.1 Current reality
 
-- Stable: **v1.2.0** (update notifier shipped).
+- Release-approved: **v2.0.0** (Phases 0–7 completed; Phase 7 experimental
+  extensions included; distribution built, publish pending). Update notifier
+  remains shipped from v1.2.0.
 - The original `v0.3.0 -> v1.0.0` roadmap is historical; do not publish v1.0.0
   after v1.2.0.
 
@@ -1391,8 +1418,8 @@ The zero-dependency AST gate is **Python-only**. For JS/TS/Rust, Waker can:
 
 | Version | Content | Default |
 |---|---|---|
-| **v2.0.0** | default-on for new `version: 2` contracts; core + test + type-evidence + comments + architecture + dead-code + dependencies + security families; rollback policies | on for new contracts |
-| **v2.1.0** | API/async/coupling rules, JS/TS plugin interface, hunk-level revert, mutation/coverage adapters | opt-in |
+| **v2.0.0** | **Release approved** — default-on for new `version: 2` contracts; core + test + type-evidence + comments + architecture + dead-code + dependencies + security families; rollback policies; Phase 7 external adapters and basic auto-fix | on for new contracts |
+| **v2.1.0** | **Deferred to v2.1 Roadmap** — API/async/coupling rules, hunk-level revert, mutation/coverage adapters, editor integrations | opt-in |
 
 If a single major release is required, ship **v2.0.0** and keep `v1.2.x`
 maintained for one release cycle.
@@ -1553,8 +1580,9 @@ For v2:
 2. Quality is blocking only for **new** findings; legacy is baselined.
 3. `waker.gate` is stdlib-only; Rich stays in the CLI layer.
 4. Python AST only in v2; no false multi-language claims.
-5. Current version is v1.2.0; the Guardian ships directly in **v2.0.0**;
-   Phase 1 is the read-only `waker audit` preview.
+5. Current version is v2.0.0; Phase 0–7 are complete. Phase 7 external
+   adapters and basic auto-fix are opt-in/experimental. Remaining optional
+   extensions are **Deferred to v2.1 Roadmap**.
 6. Mock ratio is a **warning**, never a hard defect; the hard test rules are
    structural false-green facts.
 7. Import direction is **explicit config**, not a universal “core only stdlib”.
@@ -1569,16 +1597,20 @@ For v2:
 
 ## 11. Implementation phases
 
-| Phase | Deliverable | Exit criteria |
-|---|---|---|
-| 0 | This spec + rule IDs + fixtures | reviewed |
-| 1 | `waker.gate` core + `waker audit` read-only | unit tests, clean/slop fixtures |
-| 2 | Test-integrity + type-evidence + comment scanners in `audit` | false-positive fixtures, JSON/SARIF |
-| 3 | Contract schema + engine `SLOP` + wake prompt | fake-agent E2E, no regression |
-| 4 | Dead-code + dependency + security scanners | fixtures, redaction, offline mode |
-| 5 | Baseline, suppression, TUI/status, perf budget | CLI acceptance, 200-file scan |
-| 6 | v2.0.0 default-on release | PyPI, update notifier, docs |
-| 7 | v2.1 optional extensions | JS/TS adapter, score refinements, auto-fix only after review |
+| Phase | Deliverable | Exit criteria | Status |
+|---|---|---|---|
+| 0 | This spec + rule IDs + fixtures | reviewed | **[x] COMPLETED** |
+| 1 | `waker.gate` core + `waker audit` read-only | unit tests, clean/slop fixtures | **[x] COMPLETED** |
+| 2 | Test-integrity + type-evidence + comment scanners in `audit` | false-positive fixtures, JSON/SARIF | **[x] COMPLETED** |
+| 3 | Contract schema + engine `SLOP` + wake prompt | fake-agent E2E, no regression | **[x] COMPLETED** |
+| 4 | Dead-code + dependency + security scanners | fixtures, redaction, offline mode | **[x] COMPLETED** |
+| 5 | Baseline, suppression, TUI/status, perf budget | CLI acceptance, 200-file scan | **[x] COMPLETED** |
+| 6 | v2.0.0 default-on release | packaging/docs/tests | **[x] COMPLETED** |
+| 7 | v2.1 optional extensions | JS/TS external adapters + basic auto-fix shipped experimentally | **[x] COMPLETED** |
+
+**Deferred to v2.1 Roadmap:** hunk-level revert, mutation/coverage adapters,
+API/async/coupling rules, editor integrations, and optional score/badge
+refinements.
 
 ---
 

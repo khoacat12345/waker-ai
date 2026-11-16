@@ -1,11 +1,25 @@
 # Waker Anti-Slop Guardian — Phased Implementation Plan
 
-**Status:** Phase 0–2 implemented — awaiting acceptance
-**Baseline:** waker-ai v1.2.0
-**Target:** **v2.0.0 — Anti-Slop default-on** (no v1.3 intermediate)
+**Status:** **v2.0.0 RELEASE APPROVED** — Phase 0–7 [x] COMPLETED
+**Release:** v2.0.0 approved (2026-11-16); package built, publish pending
+**Baseline:** waker-ai v1.2.0 → v2.0.0
+**Target:** **v2.0.0 — Anti-Slop default-on** (Phase 7 experimental extensions included)
 **Design:** [`docs/ANTI_SLOP_SPEC.md`](ANTI_SLOP_SPEC.md)
 **Implementation plan:** [`docs/ANTI_SLOP_ROADMAP.md`](ANTI_SLOP_ROADMAP.md)
 **Reference repos:** `C:\Users\tuank\anti-slop-refs` (review-only, outside this repo)
+
+## Phase completion — v2.0.0
+
+- [x] **Phase 0 — Contract freeze:** rules, severities, fixtures, non-goals.
+- [x] **Phase 1 — `waker.gate` core + `waker audit`:** score, badge, baseline.
+- [x] **Phase 2 — Test, type, and comment guards:** `TEST/TYPE/COMMENT/SUPPRESS/STUB`.
+- [x] **Phase 3 — Architecture, dead code, dependencies, security:** `ARCH/DEAD/PKG/SEC` + SARIF.
+- [x] **Phase 4 — Engine enforcement and wake loop:** `Diagnosis.SLOP`, wake prompt gating.
+- [x] **Phase 5 — Baseline, rollback, TUI:** run baseline, `revert`/`abort`, quality display.
+- [x] **Phase 6 — v2.0.0 release:** version, CHANGELOG, README, build, twine check.
+- [x] **Phase 7 — Experimental extensions:** JS/TS external linter adapters and basic safe auto-fix.
+
+**Deferred to v2.1 Roadmap:** hunk-level revert, mutation/coverage adapters, API/async/coupling rules, and editor integrations. Phase 7 external adapters and auto-fix are opt-in/experimental.
 
 ## Product Owner decisions (2026-11-15)
 
@@ -20,12 +34,14 @@ These override the earlier v1.3-preview plan:
 3. Thresholds: function 100 logical lines, module 1000, complexity 15,
    mock ratio 0.70 warning, growth >15% and >30 lines.
 4. Default violation policy: **kick**. `revert`/`abort` are opt-in config.
-5. Core is Python stdlib only; TS/JS is an external adapter in a later release.
+5. Core is Python stdlib only; JS/TS is supported through opt-in external
+   adapters in Phase 7 (experimental, no core dependency).
 6. Commit `.waker/anti-slop-baseline.json`; cache stays ignored.
 7. Comment style is warning; placeholders/stubs and unexplained
    `# type: ignore`/`# noqa` are errors.
-8. Cleanliness Score 0–100 and Markdown badge ship in Phase 1; auto-fix is
-   deferred to v2.1.
+8. Cleanliness Score 0–100 and Markdown badge ship in Phase 1; basic safe
+   auto-fix ships experimentally in Phase 7/v2.0.0. Refinements are deferred
+   to the v2.1 Roadmap.
 
 ---
 
@@ -53,7 +69,7 @@ These override the earlier v1.3-preview plan:
 Phase 1-3: passive gate + `waker audit` (safe, read-only)
 Phase 4-5: active enforcement in the run loop (SLOP → kick/rollback)
 Phase 6:   v2.0.0 default-on release
-Phase 7:   v2.1 optional extensions
+Phase 7:   v2.1 optional extensions (external adapters + basic auto-fix)
 ```
 
 Gate families:
@@ -64,11 +80,11 @@ Gate families:
 | Test integrity | `TEST001–008` | **shipped (Phase 2)** | on |
 | Type evidence | `TYPE001–012` | **shipped (Phase 2)** | on for new/changed |
 | Comments/suppression | `COMMENT/SUPPRESS/STUB` | **shipped (Phase 2)** | warn/on for placeholders |
-| Architecture | `ARCH001–004` | not yet | on |
-| Dead code | `DEAD001–004` | not yet | on (private-only) |
-| Dependencies | `PKG001–004` | not yet | on (`allow_new: false`) |
-| Security | `SEC001–007` | not yet | on |
-| Resource/API/async/coupling | `RES/API/ASYNC/COUPLE` | not yet | warn |
+| Architecture | `ARCH001–004` | **shipped (Phase 3)** | on |
+| Dead code | `DEAD001–004` | **shipped (Phase 3)** | on (private-only) |
+| Dependencies | `PKG001–004` | **shipped (Phase 3)** | on (`allow_new: false`) |
+| Security | `SEC001–007` | **shipped (Phase 3)** | on |
+| Resource/API/async/coupling | `RES/API/ASYNC/COUPLE` | Deferred to v2.1 Roadmap | warn |
 
 ---
 
@@ -96,7 +112,7 @@ instead of a passive red line.
 
 ## 3. Phases
 
-### Phase 0 — Freeze the contract (0.5–1 session)
+### [x] Phase 0 - Freeze the contract (0.5-1 session) — COMPLETED
 
 **Goal:** agree on rule IDs, severity, schema, diagnostics, and non-goals before
 writing production code.
@@ -120,7 +136,7 @@ Tests/exit:
 
 ---
 
-### Phase 1 — `waker.gate` core + `waker audit` (2–3 sessions)
+### [x] Phase 1 - `waker.gate` core + `waker audit` (2-3 sessions) — COMPLETED
 
 **Goal:** a fast, deterministic, read-only Python AST gate that is useful on its
 own and cannot affect `waker run`.
@@ -170,7 +186,7 @@ Tests:
 
 ---
 
-### Phase 2 — Test, type, and comment guards (2–3 sessions)
+### [x] Phase 2 - Test, type, and comment guards (2-3 sessions) — COMPLETED
 
 **Goal:** add the highest-value AI-slop families that do not need a full
 project graph.
@@ -211,7 +227,7 @@ Tests:
 
 ---
 
-### Phase 3 — Architecture, dead code, dependencies, security (3–4 sessions)
+### [x] Phase 3 - Architecture, dead code, dependencies, security (3-4 sessions) — COMPLETED
 
 **Goal:** complete the passive gate set and add SARIF/CI output.
 
@@ -247,7 +263,7 @@ warning for v2 defaults.
 
 ---
 
-### Phase 4 — Engine enforcement and wake loop (3–4 sessions)
+### [x] Phase 4 - Engine enforcement and wake loop (3-4 sessions) - COMPLETED
 
 **Goal:** turn the passive audit into Waker’s active watchdog. This is the
 differentiator no reference linter has.
@@ -286,7 +302,7 @@ Tests:
 
 ---
 
-### Phase 5 — Policies, baseline, rollback, and TUI (2–3 sessions)
+### [x] Phase 5 - Policies, baseline, rollback, and TUI (2-3 sessions) - COMPLETED
 
 **Goal:** make adoption safe on legacy repos and add controlled enforcement.
 
@@ -316,7 +332,7 @@ Tests:
 
 ---
 
-### Phase 6 — v2.0.0 default-on release (1 session)
+### [x] Phase 6 - v2.0.0 default-on release (1 session) - COMPLETED
 
 **Goal:** ship the Guardian as the default v2 behavior.
 
@@ -328,15 +344,18 @@ Tests:
 - Update notifier already shipped in v1.2.0; no new mechanism.
 - Announce only after tests/publish are verified.
 
-**Checkpoint:** user approval before release.
+**Checkpoint:** user approval before release. — **approved 2026-11-16**
 
 ---
 
-### Phase 7 — v2.1 optional extensions (2–3 sessions)
+### [x] Phase 7 - v2.1 optional extensions (2-3 sessions) - COMPLETED (experimental, included in v2.0.0)
 
-- JS/TS adapter (external linter), score/badge refinements, hunk-level revert,
-  mutation/coverage adapters.
-- Auto-fix only after explicit safety review.
+- [x] JS/TS external linter adapters (`Oxlint` / `ESLint`) through opt-in
+  subprocess adapters; no new core dependency.
+- [x] Basic safe auto-fix (`TYPE007` safety note, single unused import), opt-in
+  with `waker audit --fix` / `--dry-run`.
+- **Deferred to v2.1 Roadmap:** hunk-level revert, mutation/coverage adapters,
+  API/async/coupling rules, score/badge refinements, and editor integrations.
 - **Not core:** auto-delete, LLM judge, 12-language parser.
 
 ---
@@ -379,14 +398,14 @@ Tests:
 
 | Phase | Effort (sessions) | User checkpoint |
 |---|---:|---|
-| 0 | 0.5–1 | **done** |
-| 1 | 2–3 | **done — accepted** |
-| 2 | 2–3 | **done — awaiting acceptance** |
-| 3 | 3–4 | gate set/severity |
-| 4 | 3–4 | kick prompt |
-| 5 | 2–3 | rollback/baseline |
-| 6 | 1 | v2.0 release |
-| 7 | 2–3 | v2.1 extensions |
+| 0 | 0.5–1 | **[x] completed** |
+| 1 | 2–3 | **[x] completed — accepted** |
+| 2 | 2–3 | **[x] completed — accepted** |
+| 3 | 3–4 | **[x] completed** |
+| 4 | 3–4 | **[x] completed** |
+| 5 | 2–3 | **[x] completed** |
+| 6 | 1 | **[x] completed — v2.0.0** |
+| 7 | 2–3 | **[x] completed — experimental extensions in v2.0.0** |
 
 Estimates are relative coding sessions, not calendar promises.
 
@@ -402,16 +421,21 @@ Approved by the Product Owner on 2026-11-15:
 3. Thresholds: 100 function lines, 1000 module lines, complexity 15, mock
    ratio 0.70, growth 15% + 30 lines.
 4. Default `kick`; `revert`/`abort` opt-in.
-5. Python stdlib core; TS/JS adapter later.
+5. Python stdlib core; JS/TS external adapters are opt-in and experimental in
+   Phase 7/v2.0.0.
 6. Commit `.waker/anti-slop-baseline.json`; cache ignored.
 7. Comments warning; placeholders/stubs/unexplained suppression error.
-8. Score + Markdown badge in Phase 1; auto-fix in v2.1.
+8. Score + Markdown badge in Phase 1; basic safe auto-fix shipped
+   experimentally in v2.0.0 (Phase 7), future refinements deferred.
 
 ---
 
-## 8. Immediate next step (only after the user says go)
+## 8. Release status — v2.0.0 approved
 
-Phase 0: create fixtures and freeze the rule catalog. No production code.
-Then Phase 1: `waker.gate` core + `waker audit` read-only.
+Phases 0–7 are complete for v2.0.0. Phase 7's external linter adapters and basic
+auto-fix are included as opt-in/experimental extensions. The distribution is
+built and `twine check` validated; upload/tagging remains a release operation.
 
-**Waiting for the command.**
+**Deferred to v2.1 Roadmap:** hunk-level revert, mutation/coverage adapters,
+API/async/coupling rules, editor integrations, and non-essential score/badge
+refinements.
