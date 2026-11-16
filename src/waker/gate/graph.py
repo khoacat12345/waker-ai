@@ -52,14 +52,20 @@ def module_name(path: str) -> str:
     return ".".join(parts)
 
 
-def _resolve_relative(current: str, module: str | None, level: int) -> str | None:
+def _resolve_relative(
+    current: str,
+    module: str | None,
+    level: int,
+    *,
+    is_package: bool = False,
+) -> str | None:
     if level <= 0:
         return module or ""
     parts = current.split(".") if current else []
-    package = parts[:-1] if parts else []
+    package = parts if is_package else parts[:-1]
     if level > len(package) + 1:
         return None
-    base = package[: len(package) - level + 1] if level > 1 else package
+    base = package[: max(0, len(package) - level + 1)] if level > 1 else package
     if module:
         base = [*base, *module.split(".")]
     return ".".join(part for part in base if part)
@@ -92,12 +98,18 @@ def build_graph(repo: str | Path, files: list[Path], config: AntiSlopConfig) -> 
         relative = globs.normalize(str(path.resolve().relative_to(root)))
         graph.modules[module_name(relative)] = relative
 
-    def visit(node: ast.AST, source: str, path: str, type_only: bool = False) -> None:
+    def visit(
+        node: ast.AST,
+        source: str,
+        path: str,
+        type_only: bool = False,
+        is_package: bool = False,
+    ) -> None:
         if isinstance(node, ast.If) and _is_type_checking(node.test):
             for child in node.body:
-                visit(child, source, path, True)
+                visit(child, source, path, True, is_package)
             for child in node.orelse:
-                visit(child, source, path, True)
+                visit(child, source, path, True, is_package)
             return
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -114,7 +126,9 @@ def build_graph(repo: str | Path, files: list[Path], config: AntiSlopConfig) -> 
                         )
             return
         if isinstance(node, ast.ImportFrom):
-            base = _resolve_relative(source, node.module, node.level)
+            base = _resolve_relative(
+                source, node.module, node.level, is_package=is_package
+            )
             if base is not None:
                 for alias in node.names:
                     candidates = _target_candidates(base, alias.name, graph.modules)
@@ -145,7 +159,7 @@ def build_graph(repo: str | Path, files: list[Path], config: AntiSlopConfig) -> 
                         (path, node.lineno, node.col_offset + 1, ast.unparse(arg)[:80])
                     )
         for child in ast.iter_child_nodes(node):
-            visit(child, source, path, type_only)
+            visit(child, source, path, type_only, is_package)
 
     for module, relative in graph.modules.items():
         path = root / relative
@@ -154,8 +168,9 @@ def build_graph(repo: str | Path, files: list[Path], config: AntiSlopConfig) -> 
             tree = ast.parse(source, filename=relative)
         except (OSError, SyntaxError):
             continue
+        is_package = relative.endswith("/__init__.py")
         for child in tree.body:
-            visit(child, module, relative)
+            visit(child, module, relative, False, is_package)
     return graph
 
 

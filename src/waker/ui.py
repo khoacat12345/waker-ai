@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 from typing import Any
 
-from .models import Task
 from .state import RunPaths, RunState, read_json
 from .tui import quality_line
 

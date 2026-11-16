@@ -7,7 +7,6 @@ from . import winproc
 import os
 import signal
 import subprocess
-import sys
 import threading
 import time
 from dataclasses import dataclass

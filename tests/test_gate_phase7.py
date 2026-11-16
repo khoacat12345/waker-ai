@@ -5,12 +5,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from waker.gate.autofix import fix_file, fix_paths, fix_source
+from waker.gate.config import AntiSlopConfig
 from waker.gate.external import (
     EslintAdapter,
     OxlintAdapter,
     run_external_linters,
 )
+from waker.gate.graph import build_graph
 from waker.gate.model import Finding
+from waker.gate.scanner import scan_paths
 
 
 @dataclass
@@ -136,6 +139,60 @@ def test_external_adapter_skips_when_no_js_files(tmp_path: Path) -> None:
     assert result.findings == []
     assert result.errors == []
     assert result.adapters_run == []
+
+
+def test_security_does_not_flag_method_named_compile(tmp_path: Path) -> None:
+    write_file(tmp_path, "app.py", 'import re\nPATTERN = re.compile("x")\n')
+    config = AntiSlopConfig(enable_core=False, enable_security=True)
+    result = scan_paths(
+        tmp_path,
+        config=config,
+        changed_only=False,
+        baseline_ref="",
+        use_baseline=False,
+    )
+    assert not any(item.rule == "SEC001" for item in result.findings)
+
+
+def test_relative_imports_are_not_package_violations(tmp_path: Path) -> None:
+    write_file(tmp_path, "pkg/__init__.py", "")
+    write_file(tmp_path, "pkg/a.py", "from . import b\n")
+    write_file(tmp_path, "pkg/b.py", "VALUE = 1\n")
+    config = AntiSlopConfig(enable_core=False, enable_deps=True)
+    result = scan_paths(
+        tmp_path,
+        config=config,
+        changed_only=False,
+        baseline_ref="",
+        use_baseline=False,
+    )
+    assert not any(item.rule in {"PKG001", "PKG004"} for item in result.findings)
+
+
+def test_package_init_relative_import_resolves_to_sibling(tmp_path: Path) -> None:
+    init = write_file(tmp_path, "pkg/__init__.py", "from . import a\n")
+    child = write_file(tmp_path, "pkg/a.py", "def used():\n    return 1\n")
+    graph = build_graph(tmp_path, [init, child], AntiSlopConfig(enable_arch=True))
+    assert any(
+        edge.source == "pkg" and edge.target == "pkg.a" for edge in graph.edges
+    )
+
+
+def test_dead_code_counts_module_attribute_usage(tmp_path: Path) -> None:
+    write_file(tmp_path, "pkg/__init__.py", "")
+    write_file(tmp_path, "pkg/util.py", "def helper():\n    return 1\n")
+    write_file(tmp_path, "pkg/main.py", "from . import util\nVALUE = util.helper()\n")
+    config = AntiSlopConfig(enable_core=False, enable_dead_code=True)
+    result = scan_paths(
+        tmp_path,
+        config=config,
+        changed_only=False,
+        baseline_ref="",
+        use_baseline=False,
+    )
+    assert not any(
+        item.rule == "DEAD003" and item.symbol == "helper" for item in result.findings
+    )
 
 
 def test_autofix_adds_safety_comment_to_cast() -> None:

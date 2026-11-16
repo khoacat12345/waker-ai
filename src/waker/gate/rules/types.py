@@ -86,11 +86,6 @@ def _safety_comment(source: str, line: int) -> bool:
     return False
 
 
-def _add(findings: list[Finding], finding: Finding | None) -> None:
-    if finding is not None:
-        findings.append(finding)
-
-
 def type_findings(
     tree: ast.Module,
     path: str,

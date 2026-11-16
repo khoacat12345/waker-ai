@@ -40,6 +40,11 @@ def dead_code_findings(
     references: set[str] = set()
     for module in modules.values():
         references |= module.references
+        for imported in module.imports:
+            if imported.star or imported.local not in module.references:
+                continue
+            if imported.full:
+                references.add(imported.full.rsplit(".", 1)[-1])
 
     imported_by: dict[str, set[str]] = {}
     if graph is not None:

@@ -12,7 +12,6 @@ import hashlib
 import json
 import os
 import secrets
-import subprocess
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone

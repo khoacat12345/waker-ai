@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import time
 from dataclasses import dataclass, field
@@ -30,7 +29,6 @@ from .state import (
     RunState,
     acquire_run_lock,
     checkpoint,
-    done_ids,
     ensure_runtime_excluded,
     file_sha256,
     git_dirty,

@@ -10,22 +10,6 @@ from pathlib import Path
 from .config import AntiSlopConfig
 from ..globs import normalize
 
-_HOOKS = {
-    "setUp",
-    "tearDown",
-    "setUpClass",
-    "tearDownClass",
-    "setup",
-    "teardown",
-    "__init__",
-    "__enter__",
-    "__exit__",
-    "__call__",
-    "__repr__",
-    "__str__",
-    "__iter__",
-}
-
 
 @dataclass
 class Symbol:
@@ -46,6 +30,7 @@ class ImportRecord:
     line: int
     col: int
     star: bool = False
+    relative: bool = False
 
 
 @dataclass
@@ -57,17 +42,6 @@ class ModuleSymbols:
     references: set[str] = field(default_factory=set)
     exports: set[str] = field(default_factory=set)
     dynamic: bool = False
-
-
-def _decorator_names(node: ast.AST) -> set[str]:
-    names: set[str] = set()
-    for decorator in getattr(node, "decorator_list", []):
-        target = decorator.func if isinstance(decorator, ast.Call) else decorator
-        if isinstance(target, ast.Name):
-            names.add(target.id)
-        elif isinstance(target, ast.Attribute):
-            names.add(target.attr)
-    return names
 
 
 def _string_refs(node: ast.AST) -> set[str]:
@@ -153,6 +127,7 @@ def analyze_module(tree: ast.Module, path: str, config: AntiSlopConfig) -> Modul
                             line=node.lineno,
                             col=node.col_offset + 1,
                             star=True,
+                            relative=node.level > 0,
                         )
                     )
                     continue
@@ -165,6 +140,7 @@ def analyze_module(tree: ast.Module, path: str, config: AntiSlopConfig) -> Modul
                         path=path,
                         line=node.lineno,
                         col=node.col_offset + 1,
+                        relative=node.level > 0,
                     )
                 )
         elif isinstance(node, (ast.Assign, ast.AnnAssign)):
@@ -180,6 +156,8 @@ def analyze_module(tree: ast.Module, path: str, config: AntiSlopConfig) -> Modul
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
             symbols.references.add(node.id)
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+            symbols.references.add(node.attr)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             if node.func.id in {"globals", "vars", "locals"}:
                 symbols.dynamic = True

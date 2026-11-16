@@ -164,7 +164,12 @@ def package_findings(
         if config.is_test_path(module.path):
             continue
         for imported in module.imports:
-            if imported.star or imported.full.startswith("__future__") or imported.local.startswith("."):
+            if (
+                imported.star
+                or imported.relative
+                or imported.full.startswith("__future__")
+                or imported.local.startswith(".")
+            ):
                 continue
             top = imported.full.split(".")[0]
             if top.lower() in stdlib or top.lower() in first_party:

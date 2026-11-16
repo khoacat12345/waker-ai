@@ -89,7 +89,14 @@ def security_findings(
         if isinstance(node, ast.Call):
             dotted = _dotted(node.func)
             short = dotted.split(".")[-1]
-            if config.ban_eval and short in {"eval", "exec", "compile"}:
+            if config.ban_eval and dotted in {
+                "eval",
+                "exec",
+                "compile",
+                "builtins.eval",
+                "builtins.exec",
+                "builtins.compile",
+            }:
                 add(
                     "SEC001",
                     node,
