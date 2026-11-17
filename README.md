@@ -1,3 +1,5 @@
+![Waker v2.0 anti-slop terminal demo: kick 0 SLOP, kick 1 SLOP, kick 2 DONE](docs/demo.gif)
+
 # waker-ai
 
 [![tests](https://github.com/khoacat12345/waker-ai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/khoacat12345/waker-ai/actions/workflows/ci.yml)
@@ -5,7 +7,6 @@
 [![Agensi](https://img.shields.io/badge/Agensi-Marketplace-0066FF)](https://www.agensi.io/skills/waker-ai)
 [![Anti-Slop](https://img.shields.io/badge/anti--slop-100%2F100-brightgreen)](docs/ANTI_SLOP_SPEC.md)
 
-![waker demo](docs/demo.gif)
 
 **Never let your AI coding agent sleep on the job again.**
 
