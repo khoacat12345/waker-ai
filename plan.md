@@ -1444,3 +1444,115 @@ Quy ước trạng thái:
 - Không thay thế chatbox agent.
 - Không dùng animation quá mức hoặc emoji dày đặc.
 - Không ưu tiên web dashboard trước CLI.
+
+### 26.11 Waker Cyber-Deck FX Tiers & Agent Integration
+
+**Status:** **[x] DESIGN APPROVED — CHECKPOINT READY FOR IMPLEMENTATION (v2.2).**
+Đây là đặc tả chốt cho TUI/agent integration; chưa phải code production.
+
+#### 26.11.1 Layout & thẩm mỹ TUI
+
+- **Rich Live, 2 cột**:
+  - Cột trái 60%: **Tasks Pipeline**.
+  - Cột phải 40%: **Watchdog Telemetry**.
+  - Đáy: **Realtime Event Stream** + **Keybind Footer**.
+- Footer mặc định:
+  ```text
+  [q] Quit   [p] Pause   [v] Diff   [l] Full Log
+  ```
+- Header/telemetry phải có dữ liệu sống còn:
+  - **Agent Identity**: `[OpenCode · DeepSeek]` (lấy từ run config/model).
+  - **Goal**: task description hoặc prompt gốc đã freeze.
+  - **Scope diff thực tế**: `store.py +14 -3`, `0 out-of-scope`.
+  - Task %, errors, warnings, verify result, grade.
+- **100% dữ liệu thật** từ `ledger.json`, `events.jsonl`, `run.json` và git diff:
+  - Không bịa T2/T3 khi run chỉ có T1.
+  - Có **empty-state** đẹp khi chỉ có 1 task hoặc chưa có diff.
+  - Cost chỉ hiện `actual`; nếu muốn số nhảy giữa các usage event thì ghi rõ `~estimated`, và reconcile khi có cost thật.
+- Theme:
+  - Tokyo Night / Catppuccin.
+  - Border tối: `#24283b`.
+  - Active blue: `#7aa2f7`.
+  - Pass green: `#73daca` (hoặc `#9ece6a`).
+  - Slop red: `#f7768e`.
+  - Dim text: `#565f89`.
+- Cleanliness bar:
+  - Dạng mỏng: `▰▰▰▰▰▰▰▱▱`.
+  - Xanh: A/A+.
+  - Vàng: B/C.
+  - Đỏ nhấp nháy **2 nhịp**: `<70` hoặc có Slop.
+  - Cập nhật ngay khi Waker xong review checkpoint; không đợi hết run.
+
+#### 26.11.2 Cinematic FX tiers
+
+Tách tuyệt đối **data poll** và **animation tick**:
+
+```text
+data poll:      500–1000 ms   (đọc ledger/events từ đĩa)
+animation tick: 80–120 ms     (8–10 FPS)
+Rich refresh:   8–10 FPS
+```
+
+Các FX:
+
+- **Border Beam**: xung điện Cyan chạy 1 vòng khép kín quanh viền bo góc
+  khi `running`; dừng khi `DONE`/`FAIL`/`BLOCKED`.
+- **Active Worker Spinner**: `⠋` xoay, màu Cyan, chứng minh Coder đang chạy.
+- **Laser Shimmer**: vệt sáng quét ngang thanh Cleanliness.
+- **Braille Spark Reactor**: bắn 3–5 hạt `✦ * · .` khi có event mới, tự tắt
+  sau ~400 ms.
+- FX không được che log, không nhấp nháy vô hạn, không bắn hạt khi đang đọc
+  event stream.
+- Toàn bộ FX hỗ trợ:
+  - `--no-fx`
+  - tắt tự động trên SSH / `NO_COLOR` / non-TTY
+  - fallback terminal 80 cột
+  - ASCII fallback nếu thiếu Braille/emoji
+- **Bỏ mouse wave khỏi CLI**; hiệu ứng sóng theo chuột để dành cho Web UI.
+
+#### 26.11.3 Tích hợp Agent Chatbox
+
+- **Auto-Popup Window (`--window`)**:
+  - Khi gọi từ OpenCode/Claude Code/Cursor trong môi trường có GUI.
+  - Waker tự mở terminal phụ:
+    ```bat
+    start waker watch --repo . --run <id> --window
+    ```
+  - Chatbox chính vẫn giữ nguyên; cửa sổ phụ chỉ quan sát.
+  - Chỉ mở khi:
+    - có `--window`
+    - là interactive TTY
+    - không phải SSH/CI
+  - Không mở nhiều cửa sổ trùng run; có thể focus/attach cửa sổ đã có.
+  - Khi `DONE`, có thể giữ cửa sổ để user đọc report hoặc tự đóng theo
+    `--window-close=done`.
+
+- **Slash command `/waker`**:
+  - Skill/command cho OpenCode (và tương đương cho Claude Code nếu hỗ trợ).
+  - Nhiệm vụ:
+    - mở/attach Cyber-Deck cho run hiện tại;
+    - hỏi user nếu thiếu run id;
+    - fallback mini-bar nếu không có GUI.
+  - Không phải LLM trong watchdog; chỉ là lớp UX gọi CLI.
+
+- **Fallback Mini-bar**:
+  - Một dòng gọn cho SSH/pipe/không GUI:
+    ```text
+    waker b81c627e · C 76/100 · 2/5 kicks · 0 err · 8 warn · DONE
+    ```
+  - Có thể chèn vào câu trả lời chatbox; không ANSI trong pipe.
+  - `waker setup` cài skill/command tương ứng.
+
+#### 26.11.4 Checkpoint triển khai
+
+- [x] Chốt layout 2 cột, theme, dữ liệu thật, empty-state.
+- [x] Chốt FX tiers, tần số, `--no-fx`, SSH/NO_COLOR fallback.
+- [x] Chốt agent integration: `--window`, `/waker`, mini-bar.
+- [x] Chốt bỏ mouse wave khỏi CLI.
+- [ ] Implement data model/ViewModel + `waker status --warnings`.
+- [ ] Implement Rich Live layout + FX.
+- [ ] Implement `--window` + slash command + mini-bar.
+- [ ] Snapshot tests, Windows/SSH/80-column tests.
+- [ ] Record demo 15s từ CLI thật.
+
+**Checkpoint: APPROVED — sẵn sàng triển khai sau khi chốt thứ tự P0–P4.**
