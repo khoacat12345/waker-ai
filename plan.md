@@ -13,6 +13,8 @@
 > `depends_on` enforcement, `fail_to_pass` baseline sets, Phase 6.5 coverage
 > audit, notifications, `--yes` contract confirmation, hunk-level revert,
 > mutation/coverage adapters, API/async/coupling rules, and multi-repo.
+> **Planned v2.2:** Grill-Me contract questions and compact real-time
+> CLI/TUI checklist (see §26).
 >
 > Anti-Slop phase checklist:
 >
@@ -1242,3 +1244,203 @@ LLM chỉ được dùng ở **2 chỗ biên**, mỗi chỗ 1 lần:
 2. Phase 6.5 — coverage audit (chỉ được phát hiện thiếu, không được tuyên bố xong).
 
 Tất cả phần còn lại là **deterministic**.
+
+---
+
+## 26. Planned v2.2 — Grill-Me + Real-time CLI/TUI Checklist
+
+**Status:** Proposal only — chưa triển khai. Đây là plan chi tiết để làm sau v2.0.0.
+**Lộ trình:** Grill-Me + status/warnings ưu tiên v2.1; Rich animation/TUI polish ưu tiên v2.2.
+**Mục tiêu:** giảm contract sai do prompt mơ hồ, đồng thời làm terminal UI dễ đọc,
+gọn và có cảm giác “đang được giám sát thật”.
+
+### 26.1 Nguyên tắc phân vai
+
+```text
+Prompt
+  -> Agent chatbox: đọc, hỏi lại, phân rã, viết tasks.yaml
+  -> User: xác nhận contract
+  -> Waker: chỉ giám sát git diff ∩ scope + verify + anti-slop
+```
+
+Waker **không đọc prompt gốc để tự hiểu/sinh scope**. Grill-me là lớp
+contract-authoring, không phải LLM mới nhét vào watchdog.
+
+### 26.2 Grill-Me flow
+
+1. Agent nhận prompt và phân loại:
+   - goal rõ chưa?
+   - file/module nào được sửa?
+   - verify command là gì?
+   - acceptance/test nào chứng minh?
+   - credential, môi trường, dữ liệu, deploy có sẵn không?
+   - constraint nào bắt buộc?
+2. Nếu thiếu, Agent hỏi user 3–5 câu ngắn, ưu tiên câu blocking.
+3. Câu trả lời được ghi vào `questions.yaml` hoặc block `questions` trong
+   contract:
+   ```yaml
+   questions:
+     - id: Q1
+       kind: clarify
+       text: "API login dùng session hay JWT?"
+       options: ["session", "jwt"]
+       blocks: ["T2"]
+       status: open
+   ```
+4. Agent viết `tasks.yaml` với `scope`, `verify`, acceptance và map câu trả lời.
+5. `waker lint` fail closed nếu còn câu hỏi `status: open` đang block task.
+6. User freeze contract; Waker bắt đầu giám sát.
+
+### 26.3 CLI surface đề xuất
+
+```bash
+waker grill --prompt "..."              # in câu hỏi blocking; không tự trả lời
+waker grill --tasks .waker/tasks.yaml   # kiểm tra questions còn open
+waker plan --grill                      # agent/chatbox flow, chỉ interactive
+waker lint --questions                  # fail nếu câu hỏi blocking chưa resolve
+waker run --tasks ... --questions .waker/questions.yaml
+waker status --questions                # hiển thị câu hỏi đang chờ
+```
+
+Quy tắc:
+
+- Không auto-answer, không tự bịa scope.
+- Detached mode không treo chờ vô hạn: ghi `questions.yaml`, trả trạng thái
+  `BLOCKED`/`WAITING_FOR_INPUT`, exit code rõ ràng.
+- `--yes` chỉ dùng để chấp nhận contract **đã có đủ scope/verify/questions
+  resolved**, không dùng để bỏ qua câu hỏi blocking.
+
+### 26.4 Dữ liệu cho UI
+
+Ưu tiên đọc từ ledger/events hiện có, chỉ thêm field có nguồn rõ ràng:
+
+```json
+{
+  "task": "T1",
+  "status": "running|pass|fail|blocked",
+  "percent": 72,
+  "grade": "B",
+  "errors": 0,
+  "warnings": 3,
+  "verify_exit": 0,
+  "anti_slop": {"score": 86, "errors": 0, "warnings": 3},
+  "attempt": 2
+}
+```
+
+- `percent`: % evidence hoàn thành, không phải % thời gian.
+- `grade`: grade riêng của task nếu đủ dữ liệu; nếu không, kế thừa run grade.
+- `attempt`: kick hiện tại của task/run.
+- Logs:
+  - `kick log`: `kick 0 SLOP`, `kick 1 SLOP`, `kick 2 DONE`.
+  - `failure log`: verify failures gần nhất, tối đa 5 dòng.
+  - `anti-slop log`: rule, file:line, severity, warning/error count.
+
+### 26.5 `waker watch` layout
+
+Màn hình gọn, ưu tiên nhìn trong 1 terminal 100–120 cột:
+
+```text
+╭─ waker · b81c627e ───────────────────────────────────────────────╮
+│  CLEANLINESS   ███████████████░░░   76/100   Grade C             │
+│  kicks 2/5     pytest PASS          $0.0069   0 errors · 8 warn   │
+│  ◐ validating T1 …                                               │
+│                                                                  │
+│  CHECKLIST                                                       │
+│  ✅ T1  Todo CLI         100%  C   0 err   8 warn   verify PASS   │
+│  ◐ T2  API adapters       62%  B   0 err   1 warn   running      │
+│  ○ T3  Docs                0%  —   —       —        waiting      │
+│                                                                  │
+│  KICK LOG   0 SLOP  →  1 SLOP  →  2 DONE                         │
+│  FAIL LOG   (none in this run)                                   │
+│  ANTI-SLOP   TYPE006 ×7  ·  TYPE012 ×1  ·  warnings only          │
+╰──────────────────────────────────────────────────────────────────╯
+```
+
+Quy ước trạng thái:
+
+- `○` pending: xám, không spinner.
+- `◐` running/validating: spinner 4 frame `◐ ◓ ◑ ◒`, 120–180 ms/frame.
+- `✅` pass: xanh, flash nhẹ 1 lần rồi đứng yên.
+- `✖` fail: đỏ, **bold + blink 2 chu kỳ**, sau đó spinner quay lại và tăng
+  `kick`.
+- `⏸` blocked: vàng, kèm câu hỏi blocking hoặc lý do.
+- `SLOP` đỏ: không được coi là pass dù pytest xanh.
+
+### 26.6 Thành phần UI
+
+| Thành phần | Nguồn dữ liệu | Hành vi |
+|---|---|---|
+| Quality header | `ledger.quality` | score, grade, errors, warnings, baseline suppressed |
+| Progress ring/bar | task evidence | cập nhật mỗi turn, không flicker |
+| Spinner | task status | quay khi running, dừng khi pass/fail/blocked |
+| Checklist | tasks + scope + verify | percent, grade, errors/warnings, gate |
+| Kick log | `events.jsonl` | append `0 SLOP`, `1 SLOP`, `2 DONE` |
+| Fail log | verify/test failures | 5 dòng gần nhất, có file:line |
+| Anti-slop log | gate findings | group theo rule/family, warning/error |
+| Footer | run | cost, elapsed, session, `report.md` |
+
+### 26.7 Hành vi animation
+
+- Chỉ animate phần thay đổi; không clear toàn màn hình mỗi tick.
+- Tần suất 4–8 FPS khi running; giảm còn 1–2 FPS khi idle.
+- Khi fail:
+  1. frame đỏ đậm;
+  2. blink 2 lần (150–200 ms/lần);
+  3. hiện lý do fail;
+  4. spinner tiếp tục và `kick + 1`.
+- Khi pass:
+  1. dừng spinner;
+  2. flash xanh 300 ms;
+  3. đổi icon sang `✅`;
+  4. cập nhật quality header.
+- Tôn trọng:
+  - `NO_COLOR`
+  - `--no-anim`
+  - non-TTY/pipe → plain Markdown, không ANSI
+  - terminal hẹp → single-column fallback
+  - Windows cp1252 → ASCII fallback
+
+### 26.8 Thứ tự triển khai
+
+**Ưu tiên 1 — Grill-Me contract gate**
+1. Chuẩn hóa `Question`/`questions.yaml`.
+2. `waker grill` + `waker lint --questions`.
+3. Agent/skill flow hỏi user trước khi viết contract.
+4. Test: câu hỏi blocking phải chặn `waker run`, câu trả lời phải map được
+   task.
+
+**Ưu tiên 2 — Status/quality data**
+1. Bổ sung per-task progress vào ledger.
+2. `waker status --questions`.
+3. `waker status --warnings` + grouped warnings.
+
+**Ưu tiên 3 — Rich watch UI**
+1. Header quality + checklist.
+2. Spinner/pass/fail transitions.
+3. Kick log, fail log, anti-slop log.
+4. Compact mode và accessibility.
+
+**Ưu tiên 4 — Polish**
+1. `waker explain RULE`.
+2. Snapshot tests cho từng trạng thái.
+3. Web dashboard dùng cùng data model.
+
+### 26.9 Acceptance tests
+
+- Fake agent: `SLOP → SLOP → DONE` hiển thị đúng 3 dòng kick log.
+- Pytest xanh nhưng anti-slop đỏ: task **không** được hiện `✅`.
+- Fail hiển thị đỏ, blink, rồi spinner quay lại; pass chuyển xanh.
+- Warning không block nhưng hiện đúng count/grade.
+- Không có ANSI khi pipe; `NO_COLOR` vẫn đọc được.
+- Terminal 80 cột không tràn/cắt mất score/grade.
+- Detached mode không treo vì câu hỏi; ghi `questions.yaml` + `BLOCKED`.
+- Không auto-answer, không tự sinh scope từ prompt.
+
+### 26.10 Non-goals
+
+- Không đưa LLM vào watchdog để tự hiểu prompt.
+- Không auto-answer câu hỏi.
+- Không thay thế chatbox agent.
+- Không dùng animation quá mức hoặc emoji dày đặc.
+- Không ưu tiên web dashboard trước CLI.
