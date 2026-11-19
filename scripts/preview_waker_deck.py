@@ -204,17 +204,17 @@ def telemetry_panel(phase: Phase, elapsed: float, cost: float) -> Panel:
 def event_panel(phase: Phase, elapsed: float) -> Panel:
     lines = Text()
     count = max(1, min(len(EVENTS), phase.kick + 1))
-    for timestamp, label, message in EVENTS[max(0, count - 2):count]:
+    selected = EVENTS[max(0, count - 2):count]
+    for index, (timestamp, label, message) in enumerate(selected):
         color = GREEN if label == "DONE" else RED
+        if index:
+            lines.append("\n")
         lines.append(f"{timestamp}  ", style=MUTED)
         lines.append(f"{label:<4}", style=f"bold {color}")
-        lines.append(f"  {message}\n", style=TEXT)
+        lines.append(f"  {message}", style=TEXT)
     if phase.status != "DONE":
-        lines.append("⠋  ", style=CYAN)
+        lines.append("\n⠋  ", style=CYAN)
         lines.append("Evaluating next AST boundary…", style=MUTED)
-    else:
-        lines.append("✓  ", style=GREEN)
-        lines.append("Gate green · no further kick", style=GREEN)
     return Panel(
         lines,
         title="[bold]⚡ REALTIME EVENT STREAM[/]",
@@ -237,7 +237,6 @@ def render(
     if compact:
         main.add_column(ratio=1)
         main.add_row(task_panel(phase, frame))
-        main.add_row(Text(""))
         main.add_row(telemetry_panel(phase, elapsed, cost))
     else:
         main.add_column(ratio=3)
@@ -281,8 +280,7 @@ def run_live(
     infinite: bool = False,
 ) -> None:
     console = Console(width=width)
-    console.clear()
-    compact = console.width < 100
+    compact = console.width < 100 or console.height < 24
     frame_idx = 0
     try:
         while True:
@@ -292,6 +290,8 @@ def run_live(
                 console=console,
                 refresh_per_second=10,
                 transient=False,
+                screen=True,
+                vertical_overflow="ellipsis",
             ) as live:
                 while True:
                     now = (time.monotonic() - started) * speed

@@ -693,19 +693,20 @@ class BeamPanel:
     def _beam_style(self, p: int, P: int, phase: int) -> str:
         if not self.beam:
             return self.border_style
-        dist = min((p - phase) % P, (phase - p) % P)
-        if dist == 0:
-            return "bold white on #00ffff"  # Super bright neon lightning head
-        if dist <= 2:
-            return "bold #ffffff"  # Blinding white core
-        if dist <= 5:
-            return "bold #00ffff"  # Electric neon cyan
-        if dist <= 9:
-            return "bold #7dcfff"  # Glowing Tokyo cyan
-        if dist <= 14:
-            return "#7aa2f7"  # Electric blue aura
-        if dist <= 20:
-            return "#3d59a1"  # Fading comet tail
+        # Forward-only comet tail: the beam never glows ahead of its head.
+        behind = (phase - p) % P
+        if behind == 0:
+            return "bold white on #00ffff"  # 1-cell lightning head
+        if behind == 1:
+            return "bold #ffffff"  # blinding core
+        if behind <= 3:
+            return "bold #00ffff"  # neon cyan
+        if behind <= 6:
+            return "bold #7dcfff"  # Tokyo cyan
+        if behind <= 9:
+            return "#7aa2f7"  # electric blue
+        if behind <= 12:
+            return "#3d59a1"  # fading comet tail
         return self.border_style
 
     def __rich_console__(self, console: Any, options: Any):
@@ -720,7 +721,7 @@ class BeamPanel:
 
         H = len(lines)
         P = max(1, 2 * (width + H))
-        phase = (self.frame * 4) % P
+        phase = (self.frame * 2) % P
 
         # 1. Top row: p travels 0 .. width - 1
         top = Text("╭", style=self._beam_style(0, P, phase))
@@ -850,18 +851,23 @@ def build_cyber_deck(
         table.add_row(Text("STATUS", style=_DECK_MUTED), Text(status, style=f"bold {status_color}"))
         if view.out_of_scope:
             table.add_row(Text("SCOPE", style=_DECK_MUTED), Text(f"{len(view.out_of_scope)} out-of-scope", style=_DECK_RED))
-        else:
+        elif not compact:
             table.add_row(Text("SCOPE", style=_DECK_MUTED), Text("0 out-of-scope", style=_DECK_GREEN))
-        rule_text = Text()
         rules = _deck_rule_counts(view)
-        if rules:
-            for index, (rule, count) in enumerate(rules[:4]):
-                prefix = "├─" if index < min(3, len(rules) - 1) else "╰─"
-                rule_text.append(f"{prefix} {rule}  ×{count}\n", style=_DECK_YELLOW)
+        if compact:
+            summary = " · ".join(f"{rule} ×{count}" for rule, count in rules[:3]) or "clean"
+            rule_text = Text(f"ANTI-SLOP  {summary}", style=_DECK_YELLOW if rules else _DECK_GREEN)
         else:
-            rule_text.append("clean", style=_DECK_GREEN)
+            rule_text = Text()
+            if rules:
+                for index, (rule, count) in enumerate(rules[:4]):
+                    prefix = "├─" if index < min(3, len(rules) - 1) else "╰─"
+                    rule_text.append(f"{prefix} {rule}  ×{count}\n", style=_DECK_YELLOW)
+            else:
+                rule_text.append("clean", style=_DECK_GREEN)
+            rule_text = Group(Text("ANTI-SLOP SHIELD", style=f"bold {_DECK_MUTED}"), rule_text)
         return Panel(
-            Group(table, Text("ANTI-SLOP SHIELD", style=f"bold {_DECK_MUTED}"), rule_text),
+            Group(table, rule_text),
             title="[bold]WATCHDOG TELEMETRY[/]",
             title_align="left",
             border_style=_DECK_BORDER,
@@ -871,21 +877,27 @@ def build_cyber_deck(
 
     def event_panel() -> Panel:
         lines = Text()
-        if view.events:
-            limit = 2 if compact else 4
-            for event in view.events[-limit:]:
+        # Fixed row budget: wide shows 3 events; compact shows 2. One row is
+        # reserved for the fail log so warnings can never push the footer off-screen.
+        limit = 2 if compact else 3
+        events = view.events[-limit:]
+        if view.fail_log:
+            events = events[-(limit - 1):] if limit > 1 else []
+        if events:
+            for index, event in enumerate(events):
                 color = _DECK_GREEN if event.label == "DONE" else _DECK_RED
+                if index:
+                    lines.append("\n")
                 lines.append(f"{event.timestamp}  ", style=_DECK_MUTED)
                 lines.append(f"{event.label:<5}", style=f"bold {color}")
-                lines.append(f"  {event.message}\n", style=_DECK_TEXT)
+                message = _short(event.message, 50 if compact else 100)
+                lines.append(f"  {message}", style=_DECK_TEXT)
         else:
             lines.append("Waiting for the first event…", style=_DECK_MUTED)
         if view.fail_log:
             lines.append("\nFAIL LOG  ", style=f"bold {_DECK_RED}")
-            lines.append(" · ".join(view.fail_log[:3]), style=_DECK_TEXT)
-        if fx and view.state.status == "running" and view.events:
-            spark = ("✦ * · .", "✧ · * .", "· ✦ . *")[frame % 3]
-            lines.append(f"\n{spark}", style=_DECK_ORANGE)
+            fail = " · ".join(view.fail_log[:2])
+            lines.append(_short(fail, 56 if compact else 96), style=_DECK_TEXT)
         return Panel(
             lines,
             title="[bold]⚡ REALTIME EVENT STREAM[/]",
@@ -896,24 +908,23 @@ def build_cyber_deck(
         )
 
     header = Text()
-    header.append("WAKER SUPERVISOR", style=f"bold {_DECK_TEXT}")
-    header.append("  v2.2  ·  ", style=_DECK_MUTED)
+    header.append("✨ WAKER CYBER-DECK", style=f"bold {_DECK_CYAN}")
+    header.append("  ·  v2.2  ·  ", style=_DECK_MUTED)
     header.append(f"run {view.state.run_id}", style=_DECK_MUTED)
     if compact:
         header.append(f"\n⏱ {fmt_duration(view.state.elapsed)}", style=_DECK_CYAN)
-        header.append(f"  ·  Agent: {view.agent}", style=_DECK_MUTED)
+        header.append(f"  ·  {_short(view.agent, 44)}", style=_DECK_MUTED)
     else:
         header.append(f"  ·  ⏱ {fmt_duration(view.state.elapsed)}", style=_DECK_CYAN)
-        header.append(f"  ·  Agent: {view.agent}", style=_DECK_MUTED)
+        header.append(f"  ·  Agent: {_short(view.agent, 48)}", style=_DECK_MUTED)
     goal = Text()
     goal.append("Goal: ", style=f"bold {_DECK_MUTED}")
-    goal.append(view.goal, style=_DECK_TEXT)
+    goal.append(_short(view.goal, 62 if compact else 100), style=_DECK_TEXT)
     footer = Text()
     footer.append("[q] Quit  ", style=_DECK_MUTED)
     footer.append("[p] Pause  ", style=_DECK_MUTED)
     footer.append("[v] Diff  ", style=_DECK_MUTED)
     footer.append("[l] Full Log", style=_DECK_MUTED)
-    title = Text("✨ WAKER CYBER-DECK", style=f"bold {_DECK_CYAN}")
     main = Table.grid(expand=True, padding=(0, 1))
     if compact:
         main.add_column(ratio=1)
@@ -924,21 +935,28 @@ def build_cyber_deck(
         main.add_column(ratio=2)
         main.add_row(task_panel(), telemetry_panel())
     body = Group(
-        title,
-        Panel(Group(header, goal), box=box.ROUNDED, border_style=_DECK_BORDER, padding=(0, 1)),
+        header,
+        goal,
         main,
         event_panel(),
         footer,
     )
-    if view.state.status == "DONE":
-        border_style = _DECK_GREEN
-        beam_active = False
-    elif view.state.status in ("FAILED", "BLOCKED") or any(task.status == "failed" for task in view.tasks):
-        border_style = _DECK_RED
-        beam_active = False
-    else:
-        border_style = _DECK_BORDER
-        beam_active = fx and (view.state.status == "running" or not view.state.status)
+    border_style = (
+        _DECK_GREEN
+        if view.state.status == "DONE"
+        else _DECK_YELLOW
+        if view.state.status == "BLOCKED"
+        else _DECK_RED
+        if view.state.status == "FAILED" or any(task.status == "failed" for task in view.tasks)
+        else _DECK_ORANGE
+        if view.state.diagnosis == "SLOP" or view.errors or view.warnings
+        else _DECK_BORDER
+    )
+    beam_active = (
+        fx
+        and view.state.status not in ("DONE", "FAILED", "BLOCKED")
+        and not any(task.status == "failed" for task in view.tasks)
+    )
 
     return BeamPanel(
         body,
@@ -977,7 +995,7 @@ def watch(
         print(mini_line(view))
         return
     console = Console()
-    compact = console.width < 100
+    compact = console.width < 100 or console.height < 24
     fx = fx_enabled(no_fx)
     last_poll = 0.0
     frame = 0
