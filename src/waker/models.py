@@ -128,6 +128,46 @@ class Task:
 
 
 @dataclass
+class PhaseSpec:
+    """One named phase in a frozen contract.
+
+    Phase budgets are kept as the user wrote them (for example ``"45m"``) so
+    YAML round-trips do not lose the human-readable unit. Use
+    :attr:`budget_seconds` when validating time.
+    """
+
+    id: str
+    name: str = ""
+    budget: str | int | float | None = None
+
+    @property
+    def budget_seconds(self) -> float | None:
+        if self.budget is None or self.budget == "":
+            return None
+        from .budget import parse_duration
+
+        return parse_duration(self.budget)
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"id": self.id}
+        if self.name:
+            out["name"] = self.name
+        if self.budget is not None:
+            out["budget"] = self.budget
+        return out
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "PhaseSpec":
+        raw_id = data.get("id")
+        raw_name = data.get("name")
+        return cls(
+            id=str(raw_id) if raw_id is not None else "P?",
+            name=str(raw_name) if raw_name is not None else "",
+            budget=data.get("budget"),
+        )
+
+
+@dataclass
 class Question:
     """A question the daemon must ask a human. Never auto-answered when blocking."""
 
@@ -165,18 +205,25 @@ class PlanBundle:
     preferences: list[str] = field(default_factory=list)
     questions: list[Question] = field(default_factory=list)
     unassigned: list[str] = field(default_factory=list)
+    profile: str | None = None
+    phases: list[PhaseSpec] = field(default_factory=list)
 
     def all_tasks(self) -> list[Task]:
         return [*self.tasks, *self.constraints]
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "tasks": [t.to_dict() for t in self.tasks],
             "constraints": [c.to_dict() for c in self.constraints],
             "preferences": list(self.preferences),
             "questions": [q.to_dict() for q in self.questions],
             "unassigned": list(self.unassigned),
         }
+        if self.profile:
+            out["profile"] = self.profile
+        if self.phases:
+            out["phases"] = [phase.to_dict() for phase in self.phases]
+        return out
 
 
 @dataclass

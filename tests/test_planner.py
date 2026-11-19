@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from waker import evidence, planner
-from waker.models import Task
+from waker.models import PhaseSpec, PlanBundle, Task
 
 
 def test_four_buckets_are_separated():
@@ -164,3 +166,115 @@ def test_lint_rejects_blind_without_verify():
     )
     assert planner.has_errors(issues)
     assert any("smoke" in issue.message for issue in issues)
+
+
+def test_legacy_yaml_without_phases_defaults_to_p1(tmp_path: Path):
+    path = tmp_path / "legacy.yaml"
+    path.write_text(
+        "tasks:\n"
+        "  - id: T1\n"
+        "    desc: core\n"
+        "    scope: [\"src/core/**\"]\n"
+        "    verify: pytest tests/core -q\n",
+        encoding="utf-8",
+    )
+
+    bundle = planner.load_contract(path)
+    assert bundle.phases == []
+    assert bundle.profile is None
+    assert bundle.tasks[0].phase == "P1"
+
+    out = tmp_path / "roundtrip.yaml"
+    planner.write_tasks(out, bundle)
+    loaded = planner.load_contract(out)
+    assert loaded.tasks[0].phase == "P1"
+
+
+def test_phases_yaml_roundtrip(tmp_path: Path):
+    path = tmp_path / "phased.yaml"
+    path.write_text(
+        "profile: small\n"
+        "phases:\n"
+        "  - id: P1\n"
+        "    name: Core\n"
+        "    budget: 5m\n"
+        "  - id: P2\n"
+        "    name: Docs\n"
+        "    budget: 10m\n"
+        "tasks:\n"
+        "  - id: T1\n"
+        "    desc: core\n"
+        "    phase: P1\n"
+        "    scope: [\"src/core/**\"]\n"
+        "    verify: pytest tests/core -q\n"
+        "  - id: T2\n"
+        "    desc: docs\n"
+        "    phase: P2\n"
+        "    scope: [\"docs/**\"]\n"
+        "    verify: grep -q core docs/README.md\n",
+        encoding="utf-8",
+    )
+
+    bundle = planner.load_contract(path)
+    assert bundle.profile == "small"
+    assert [phase.id for phase in bundle.phases] == ["P1", "P2"]
+    assert bundle.phases[0].budget == "5m"
+    assert [task.phase for task in bundle.tasks] == ["P1", "P2"]
+    assert not planner.has_errors(planner.lint_contract(bundle))
+
+    out = tmp_path / "roundtrip.yaml"
+    planner.write_tasks(out, bundle)
+    loaded = planner.load_contract(out)
+    assert loaded.profile == "small"
+    assert loaded.phases == bundle.phases
+    assert [task.phase for task in loaded.tasks] == ["P1", "P2"]
+    assert planner.render_yaml(loaded).startswith("profile: small\nphases:\n")
+
+
+def test_phase_validation_rejects_unknown_empty_and_over_budget():
+    tasks = [
+        Task(id="T1", desc="core", phase="P1", scope=["src/**"], verify="pytest -q"),
+        Task(id="T2", desc="other", phase="P2", scope=["docs/**"], verify="pytest -q"),
+    ]
+    phases = [
+        PhaseSpec("P1", "Core", "10m"),
+        PhaseSpec("P2", "Docs", "10m"),
+    ]
+    bundle = PlanBundle(tasks=tasks, phases=phases, profile="small")
+    messages = " ".join(issue.message for issue in planner.lint_contract(bundle))
+    assert "exceed max_wall_clock" in messages
+
+    unknown = PhaseSpec("P1", "Core", "5m")
+    unknown_task = Task(
+        id="T3", desc="orphan", phase="P2", scope=["src/orphan/**"], verify="pytest -q"
+    )
+    unknown_bundle = PlanBundle(tasks=[unknown_task], phases=[unknown], profile="small")
+    assert any("not declared" in issue.message for issue in planner.lint_contract(unknown_bundle))
+
+    empty = PlanBundle(
+        tasks=[tasks[0]],
+        phases=[PhaseSpec("P1", "Core", "5m"), PhaseSpec("P2", "Docs", "5m")],
+        profile="small",
+    )
+    assert any("is empty" in issue.message for issue in planner.lint_contract(empty))
+
+
+def test_empty_phases_list_is_rejected(tmp_path: Path):
+    path = tmp_path / "empty-phases.yaml"
+    path.write_text("phases: []\ntasks: []\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="at least one phase"):
+        planner.load_contract(path)
+
+
+def test_phase_validation_rejects_missing_fields_and_duplicates():
+    bundle = PlanBundle(
+        tasks=[Task(id="T1", desc="x", phase="P1", scope=["src/**"], verify="pytest -q")],
+        phases=[
+            PhaseSpec("P1", "", "5m"),
+            PhaseSpec("P1", "Duplicate", None),
+        ],
+    )
+    messages = " ".join(issue.message for issue in planner.lint_contract(bundle))
+    assert "missing `name`" in messages
+    assert "duplicate phase id" in messages
+    assert "missing `budget`" in messages

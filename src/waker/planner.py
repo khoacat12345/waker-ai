@@ -23,7 +23,8 @@ from typing import Any
 import yaml
 
 from . import globs
-from .models import PlanBundle, Question, Task
+from .budget import DEFAULT_PROFILE, validate_phase_budget
+from .models import PhaseSpec, PlanBundle, Question, Task
 
 BULLET_RE = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)])\s+")
 PHASE_RE = re.compile(
@@ -337,10 +338,72 @@ def parse_plan_markdown(text: str) -> PlanBundle:
     return bundle
 
 
+def _task_dicts(raw: Any) -> list[dict[str, Any]]:
+    if isinstance(raw, dict):
+        raw_items = [*(raw.get("tasks") or []), *(raw.get("constraints") or [])]
+    else:
+        raw_items = raw or []
+    if not isinstance(raw_items, list):
+        raise ValueError("contract `tasks` must be a list")
+    items: list[dict[str, Any]] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            raise ValueError("each contract task must be a mapping")
+        items.append(item)
+    return items
+
+
+def _parse_phases(raw: Any) -> list[PhaseSpec]:
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ValueError("contract `phases` must be a list")
+    if not raw:
+        raise ValueError("contract `phases` must contain at least one phase")
+    phases: list[PhaseSpec] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("each contract phase must be a mapping")
+        phases.append(PhaseSpec.from_dict(item))
+    return phases
+
+
+def _assign_default_phase(tasks: list[Task]) -> None:
+    """Assign P1 only when a task has no phase.
+
+    A task that already uses a custom phase id (for example ``"1"`` from the
+    prompt parser) keeps it. Explicit-phase contracts are checked later so a
+    missing ``P1`` declaration is a lint error instead of silent guessing.
+    """
+    for task in tasks:
+        if not task.phase:
+            task.phase = "P1"
+
+
+def _bundle_from_raw(raw: Any) -> PlanBundle:
+    tasks = [Task.from_dict(item) for item in _task_dicts(raw)]
+    phases = _parse_phases(raw.get("phases") if isinstance(raw, dict) else None)
+    _assign_default_phase(tasks)
+    profile = None
+    if isinstance(raw, dict) and raw.get("profile") is not None:
+        if not isinstance(raw["profile"], str) or not raw["profile"].strip():
+            raise ValueError("contract `profile` must be a non-empty string")
+        profile = raw["profile"].strip().lower()
+    return PlanBundle(
+        tasks=[task for task in tasks if task.kind == "work"],
+        constraints=[task for task in tasks if task.kind != "work"],
+        profile=profile,
+        phases=phases,
+    )
+
+
 def render_yaml(bundle: PlanBundle) -> str:
-    payload: dict[str, Any] = {
-        "tasks": [t.to_dict() for t in bundle.all_tasks()],
-    }
+    payload: dict[str, Any] = {}
+    if bundle.profile:
+        payload["profile"] = bundle.profile
+    if bundle.phases:
+        payload["phases"] = [phase.to_dict() for phase in bundle.phases]
+    payload["tasks"] = [t.to_dict() for t in bundle.all_tasks()]
     if bundle.preferences:
         payload["preferences"] = bundle.preferences
     if bundle.questions:
@@ -349,27 +412,20 @@ def render_yaml(bundle: PlanBundle) -> str:
 
 
 def load_tasks(path: str | Path) -> list[Task]:
-    """Load tasks from YAML. Accepts a list or a ``tasks:`` mapping."""
+    """Load tasks from YAML. Accepts a list or a ``tasks:`` mapping.
+
+    Legacy contracts without ``phases`` still load; tasks without a phase get
+    the implicit ``P1`` default.
+    """
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8-sig")) or []
-    if isinstance(raw, dict):
-        items = raw.get("tasks") or raw.get("constraints") or []
-    else:
-        items = raw
-    return [Task.from_dict(item) for item in items]
+    bundle = _bundle_from_raw(raw)
+    return bundle.all_tasks()
 
 
 def parse_contract_text(text: str) -> PlanBundle:
     """Parse a YAML document (as returned by an LLM planner)."""
     raw = yaml.safe_load(text) or []
-    if isinstance(raw, dict):
-        items = raw.get("tasks") or raw.get("constraints") or []
-    else:
-        items = raw
-    tasks = [Task.from_dict(item) for item in items if isinstance(item, dict)]
-    return PlanBundle(
-        tasks=[task for task in tasks if task.kind == "work"],
-        constraints=[task for task in tasks if task.kind != "work"],
-    )
+    return _bundle_from_raw(raw)
 
 
 def write_tasks(path: str | Path, bundle: PlanBundle) -> None:
@@ -515,6 +571,71 @@ def lint_tasks(tasks: list[Task], repo: str | Path | None = None) -> list[LintIs
     return issues
 
 
+def _lint_phases(bundle: PlanBundle) -> list[LintIssue]:
+    issues: list[LintIssue] = []
+    phases = bundle.phases
+    if len(phases) > 6:
+        issues.append(LintIssue("error", None, "contract has more than 6 phases"))
+
+    seen: set[str] = set()
+    counts = {phase.id: 0 for phase in phases}
+    valid_budgets: list[str | int | float] = []
+    for phase in phases:
+        if not phase.id or phase.id == "P?":
+            issues.append(LintIssue("error", None, "phase is missing `id`"))
+        elif phase.id in seen:
+            issues.append(LintIssue("error", None, f"duplicate phase id `{phase.id}`"))
+        else:
+            seen.add(phase.id)
+
+        if not phase.name.strip():
+            issues.append(LintIssue("error", None, f"phase `{phase.id}` is missing `name`"))
+        if phase.budget is None or phase.budget == "":
+            issues.append(LintIssue("error", None, f"phase `{phase.id}` is missing `budget`"))
+        else:
+            try:
+                phase.budget_seconds
+            except ValueError as exc:
+                issues.append(LintIssue("error", None, f"phase `{phase.id}`: {exc}"))
+            else:
+                valid_budgets.append(phase.budget)
+
+    for task in bundle.all_tasks():
+        if task.phase not in counts:
+            issues.append(
+                LintIssue(
+                    "error",
+                    task.id,
+                    f"task phase `{task.phase}` is not declared in `phases`",
+                )
+            )
+        else:
+            counts[task.phase] += 1
+
+    for phase in phases:
+        if counts.get(phase.id, 0) == 0:
+            issues.append(LintIssue("error", None, f"phase `{phase.id}` is empty"))
+
+    if len(valid_budgets) == len(phases):
+        try:
+            validate_phase_budget(valid_budgets, bundle.profile or DEFAULT_PROFILE)
+        except (TypeError, ValueError) as exc:
+            issues.append(LintIssue("error", None, f"phase budget invalid: {exc}"))
+
+    return issues
+
+
+def lint_contract(
+    bundle: PlanBundle,
+    repo: str | Path | None = None,
+) -> list[LintIssue]:
+    """Validate tasks plus explicit phase metadata."""
+    issues = lint_tasks(bundle.all_tasks(), repo=repo)
+    if bundle.phases:
+        issues.extend(_lint_phases(bundle))
+    return issues
+
+
 def has_errors(issues: list[LintIssue]) -> bool:
     return any(issue.level == "error" for issue in issues)
 
@@ -526,13 +647,16 @@ def format_issues(issues: list[LintIssue]) -> str:
 
 
 def load_contract(path: str | Path | None, prompt: str | None = None) -> PlanBundle:
-    """Load a contract from YAML, or parse a prompt with the rules planner."""
+    """Load a contract from YAML, or parse a prompt with the rules planner.
+
+    Legacy YAML without ``phases`` loads unchanged; tasks without a phase are
+    assigned the implicit ``P1``.
+    """
     if path:
-        tasks = load_tasks(path)
-        return PlanBundle(
-            tasks=[t for t in tasks if t.kind == "work"],
-            constraints=[t for t in tasks if t.kind != "work"],
-        )
+        raw = yaml.safe_load(Path(path).read_text(encoding="utf-8-sig")) or []
+        return _bundle_from_raw(raw)
     if prompt is None:
         raise ValueError("requires --tasks or --prompt")
-    return parse_prompt(prompt)
+    bundle = parse_prompt(prompt)
+    _assign_default_phase(bundle.all_tasks())
+    return bundle

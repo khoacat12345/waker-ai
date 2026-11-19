@@ -57,15 +57,14 @@ def _parse_bundle(args) -> planner.PlanBundle:
         raise SystemExit(f"planner error: {exc}")
 
 
-def _load_contract(args) -> tuple[list[Task], list[Task]]:
+def _load_contract(args) -> planner.PlanBundle:
     if not getattr(args, "tasks", None) and not getattr(args, "prompt", None):
         raise SystemExit("requires --tasks or --prompt")
-    bundle = planner.load_contract(getattr(args, "tasks", None), getattr(args, "prompt", None))
-    return bundle.tasks, bundle.constraints
+    return planner.load_contract(getattr(args, "tasks", None), getattr(args, "prompt", None))
 
 
-def _lint_or_fail(args, tasks: list[Task], constraints: list[Task]) -> int | None:
-    issues = planner.lint_tasks([*tasks, *constraints], repo=args.repo)
+def _lint_or_fail(args, bundle: planner.PlanBundle) -> int | None:
+    issues = planner.lint_contract(bundle, repo=args.repo)
     if issues:
         print(planner.format_issues(issues), file=sys.stderr)
     if issues and not getattr(args, "no_lint", False) and planner.has_errors(issues):
@@ -108,7 +107,7 @@ def cmd_plan(args) -> int:
         print(json.dumps(bundle.to_dict(), ensure_ascii=False, indent=2))
     else:
         print(planner.render_yaml(bundle))
-    issues = planner.lint_tasks(bundle.all_tasks(), repo=args.repo)
+    issues = planner.lint_contract(bundle, repo=args.repo)
     if issues:
         print("\n# lint", file=sys.stderr)
         print(planner.format_issues(issues), file=sys.stderr)
@@ -117,8 +116,8 @@ def cmd_plan(args) -> int:
 
 
 def cmd_lint(args) -> int:
-    tasks = planner.load_tasks(args.tasks)
-    issues = planner.lint_tasks(tasks, repo=args.repo)
+    bundle = planner.load_contract(args.tasks)
+    issues = planner.lint_contract(bundle, repo=args.repo)
     print(planner.format_issues(issues))
     return 2 if planner.has_errors(issues) else 0
 
@@ -140,8 +139,9 @@ def cmd_run(args) -> int:
         print(f"result: {result.diagnosis.value} (exit {result.exit_code})")
         return result.exit_code
 
-    tasks, constraints = _load_contract(args)
-    failed = _lint_or_fail(args, tasks, constraints)
+    bundle = _load_contract(args)
+    tasks, constraints = bundle.tasks, bundle.constraints
+    failed = _lint_or_fail(args, bundle)
     if failed is not None:
         return failed
     if any(task.blind for task in tasks) and not args.vault:
@@ -229,8 +229,9 @@ def _run_flags(args) -> list[str]:
 
 def cmd_start(args) -> int:
     if not args.resume:
-        tasks, constraints = _load_contract(args)
-        failed = _lint_or_fail(args, tasks, constraints)
+        bundle = _load_contract(args)
+        tasks, constraints = bundle.tasks, bundle.constraints
+        failed = _lint_or_fail(args, bundle)
         if failed is not None:
             return failed
         if any(task.blind for task in tasks) and not args.vault:
