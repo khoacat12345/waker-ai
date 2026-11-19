@@ -669,11 +669,12 @@ def _deck_rule_counts(view: WakerViewModel) -> list[tuple[str, int]]:
 
 
 class BeamPanel:
-    """Rounded panel with an optional animated border beam.
+    """Rounded panel with an animated electric laser border beam.
 
-    Rich's Panel applies one style to the whole border. This small renderable
-    keeps the child layout intact while styling a moving window of border
-    cells, so the effect stays terminal-cell based and cheap at 8–10 FPS.
+    Rich's Panel applies one style to the whole border. This renderable
+    keeps the child layout intact while styling an intense electric laser beam
+    traveling smoothly along the entire 2D perimeter of the panel
+    (top -> right -> bottom -> left) with a glowing comet gradient.
     """
 
     def __init__(
@@ -689,15 +690,22 @@ class BeamPanel:
         self.beam = beam
         self.frame = frame
 
-    def _border_style(self, position: int, width: int) -> str:
+    def _beam_style(self, p: int, P: int, phase: int) -> str:
         if not self.beam:
             return self.border_style
-        phase = (self.frame * 2) % max(1, width * 2 + 2)
-        distance = min((position - phase) % (width * 2 + 2), (phase - position) % (width * 2 + 2))
-        if distance <= 1:
-            return f"bold {_DECK_CYAN}"
-        if distance <= 3:
-            return _DECK_BLUE
+        dist = min((p - phase) % P, (phase - p) % P)
+        if dist == 0:
+            return "bold #ffffff on #7dcfff"  # Lightning spark head!
+        if dist <= 1:
+            return "bold #ffffff"  # Blinding white core
+        if dist <= 3:
+            return "bold #00ffff"  # Electric neon cyan
+        if dist <= 6:
+            return "bold #7dcfff"  # Glowing cyan
+        if dist <= 10:
+            return "#7aa2f7"  # Electric blue aura
+        if dist <= 15:
+            return "#3d59a1"  # Deep blue fading comet tail
         return self.border_style
 
     def __rich_console__(self, console: Any, options: Any):
@@ -709,13 +717,24 @@ class BeamPanel:
         lines = console.render_lines(self.renderable, child_options, pad=True)
         if not lines:
             lines = [[]]
-        top = Text("╭", style=self._border_style(0, width))
+
+        H = len(lines)
+        P = max(1, 2 * (width + H))
+        phase = (self.frame * 4) % P
+
+        # 1. Top row: p travels 0 .. width - 1
+        top = Text("╭", style=self._beam_style(0, P, phase))
         for index in range(inner):
-            top.append("─", style=self._border_style(index + 1, width))
-        top.append("╮", style=self._border_style(width - 1, width))
+            p = index + 1
+            top.append("─", style=self._beam_style(p, P, phase))
+        top.append("╮", style=self._beam_style(width - 1, P, phase))
         yield top
-        for row in lines:
-            left = Text("│", style=self._border_style(0, width))
+
+        # 2. Body rows: left wall travels UP (P - 1 - y), right wall travels DOWN (width + y)
+        for y, row in enumerate(lines):
+            p_left = P - 1 - y
+            p_right = width + y
+            left = Text("│", style=self._beam_style(p_left, P, phase))
             body = Text()
             for segment in row:
                 text = getattr(segment, "text", "")
@@ -725,12 +744,18 @@ class BeamPanel:
             if body.cell_len < inner:
                 body.append(" " * (inner - body.cell_len))
             left.append_text(body)
-            left.append("│", style=self._border_style(width - 1, width))
+            left.append("│", style=self._beam_style(p_right, P, phase))
             yield left
-        bottom = Text("╰", style=self._border_style(0, width))
+
+        # 3. Bottom row: travels right to left
+        p_bot_left = 2 * width + H - 1
+        p_bot_right = width + H
+        bottom = Text("╰", style=self._beam_style(p_bot_left, P, phase))
         for index in range(inner):
-            bottom.append("─", style=self._border_style(inner - index, width))
-        bottom.append("╯", style=self._border_style(width - 1, width))
+            x = index + 1
+            p = width + H + (width - 1 - x)
+            bottom.append("─", style=self._beam_style(p, P, phase))
+        bottom.append("╯", style=self._beam_style(p_bot_right, P, phase))
         yield bottom
 
 
@@ -908,17 +933,20 @@ def build_cyber_deck(
         Text(""),
         footer,
     )
-    border_style = (
-        _DECK_GREEN
-        if view.state.status == "DONE"
-        else _DECK_RED
-        if view.state.diagnosis == "SLOP" or any(task.status == "failed" for task in view.tasks)
-        else _DECK_BORDER
-    )
+    if view.state.status == "DONE":
+        border_style = _DECK_GREEN
+        beam_active = False
+    elif view.state.status in ("FAILED", "BLOCKED") or any(task.status == "failed" for task in view.tasks):
+        border_style = _DECK_RED
+        beam_active = False
+    else:
+        border_style = _DECK_BORDER
+        beam_active = fx and (view.state.status == "running" or not view.state.status)
+
     return BeamPanel(
         body,
         border_style=border_style,
-        beam=fx and view.state.status == "running",
+        beam=beam_active,
         frame=frame,
     )
 

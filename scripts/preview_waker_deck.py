@@ -17,6 +17,10 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+# Ensure src is in python path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from waker.ui import BeamPanel
+
 from rich import box
 from rich.console import Console, Group
 from rich.live import Live
@@ -221,7 +225,14 @@ def event_panel(phase: Phase, elapsed: float) -> Panel:
     )
 
 
-def render(phase: Phase, elapsed: float, cost: float, frame: str, compact: bool = False):
+def render(
+    phase: Phase,
+    elapsed: float,
+    cost: float,
+    frame: str,
+    compact: bool = False,
+    frame_idx: int = 0,
+):
     main = Table.grid(expand=True, padding=(0, 1))
     if compact:
         main.add_column(ratio=1)
@@ -239,35 +250,38 @@ def render(phase: Phase, elapsed: float, cost: float, frame: str, compact: bool 
     footer.append("[l] Full Log", style=MUTED)
     body = Group(
         header(phase, elapsed, compact=compact),
-        Text(""),
         main,
-        Text(""),
         event_panel(phase, elapsed),
-        Text(""),
         footer,
     )
-    return Panel(
+    border_style = (
+        GREEN
+        if phase.status == "DONE"
+        else BORDER
+    )
+    is_running = phase.status != "DONE"
+    return BeamPanel(
         body,
-        box=box.ROUNDED,
-        border_style=BORDER,
-        padding=(0, 1),
-        title=f"[bold]✨ WAKER CYBER-DECK[/]  [dim]Goal: {GOAL}[/]",
-        title_align="left",
+        border_style=border_style,
+        beam=is_running,
+        frame=frame_idx,
     )
 
 
 def run_once(width: int | None) -> None:
     phase = PHASES[-1]
     console = Console(width=width)
-    console.print(render(phase, FINAL_SECONDS, FINAL_COST, "✓", compact=console.width < 100))
+    console.print(render(phase, FINAL_SECONDS, FINAL_COST, "✓", compact=console.width < 100, frame_idx=0))
 
 
 def run_live(speed: float, width: int | None) -> None:
     console = Console(width=width)
+    console.clear()
     compact = console.width < 100
     started = time.monotonic()
+    frame_idx = 0
     with Live(
-        render(PHASES[0], 0, 0, SPINNER[0], compact=compact),
+        render(PHASES[0], 0, 0, SPINNER[0], compact=compact, frame_idx=0),
         console=console,
         refresh_per_second=10,
         transient=False,
@@ -282,13 +296,14 @@ def run_live(speed: float, width: int | None) -> None:
             progress = min(1.0, now / 12.5)
             cost = min(FINAL_COST, FINAL_COST * progress)
             frame = SPINNER[int(time.monotonic() * 10) % len(SPINNER)]
+            frame_idx += 1
             live.update(
-                render(phase, elapsed, cost, frame, compact=compact),
+                render(phase, elapsed, cost, frame, compact=compact, frame_idx=frame_idx),
                 refresh=True,
             )
             time.sleep(0.08)
         live.update(
-            render(PHASES[-1], FINAL_SECONDS, FINAL_COST, "✓", compact=compact),
+            render(PHASES[-1], FINAL_SECONDS, FINAL_COST, "✓", compact=compact, frame_idx=frame_idx),
             refresh=True,
         )
         time.sleep(0.8)
