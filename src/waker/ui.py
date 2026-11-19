@@ -565,6 +565,10 @@ def render_markdown(state: RunState, ledger: dict[str, Any]) -> str:
         f"`{progress_bar(done, total)}`  \u23f1 {fmt_duration(state.elapsed)}  "
         f"\U0001F501 {state.kicks}/{state.max_kicks}  \U0001F9EA {test_label}"
         + (f"  \U0001F4B0 ${state.cost_usd:.4f}" if state.cost_usd else ""),
+        f"timeouts: turn {fmt_duration(getattr(state, 'turn_timeout', 900.0))} \u00b7 "
+        f"wall {fmt_duration(getattr(state, 'max_wall_clock', 5400.0))} \u00b7 "
+        f"verify {fmt_duration(getattr(state, 'verify_timeout', 300.0))} \u00b7 "
+        f"freeze {fmt_duration(getattr(state, 'freeze_after', 300.0))}",
     ]
     if ledger.get("quality"):
         lines.append(quality_line(ledger))

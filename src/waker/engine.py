@@ -85,6 +85,7 @@ class EngineConfig:
     contract_path: str | None = None
     test_globs: list[str] = field(default_factory=lambda: list(DEFAULT_TEST_GLOBS))
     max_kicks: int = 5
+    profile: str | None = None
     turn_timeout: float = 900.0
     verify_timeout: float = 300.0
     freeze_after: float = 300.0
@@ -120,6 +121,8 @@ class Engine:
         self._verify_results: dict = {}
         self._constraint_results: dict = {}
         self._verify_cache: dict = {}
+        self._verify_timeouts: set[str] = set()
+        self._test_timed_out: bool = False
         self._test_skipped: bool = False
         self._vault: Vault | None = None
         self._blind_suites: list[str] = []
@@ -195,7 +198,9 @@ class Engine:
             vault_hash=self._vault_hash,
             vault_dir=cfg.vault_dir,
             max_kicks=cfg.max_kicks,
+            profile=cfg.profile,
             turn_timeout=cfg.turn_timeout,
+            verify_timeout=cfg.verify_timeout,
             freeze_after=cfg.freeze_after,
             alive_threshold=cfg.alive_threshold,
             max_wall_clock=cfg.max_wall_clock,
@@ -217,6 +222,13 @@ class Engine:
             baseline_commit=baseline_commit,
             tasks_hash=contract_hash,
             test_globs=list(cfg.test_globs),
+            profile=cfg.profile,
+            timeouts={
+                "turn_timeout": cfg.turn_timeout,
+                "max_wall_clock": cfg.max_wall_clock,
+                "verify_timeout": cfg.verify_timeout,
+                "freeze_after": cfg.freeze_after,
+            },
         )
 
         if cfg.test_command:
@@ -276,7 +288,9 @@ class Engine:
             prompt=state.prompt,
             contract_path=state.contract_path,
             max_kicks=max_kicks or state.max_kicks,
+            profile=state.profile,
             turn_timeout=state.turn_timeout,
+            verify_timeout=state.verify_timeout,
             freeze_after=state.freeze_after,
             alive_threshold=state.alive_threshold,
             max_wall_clock=state.max_wall_clock,
@@ -425,6 +439,7 @@ class Engine:
                     exit_code=turn.exit_code,
                     duration=round(turn.duration, 2),
                     timed_out=turn.timed_out,
+                    turn_timeout=state.turn_timeout,
                     frozen=turn.frozen,
                     cost_usd=round(turn.cost_usd, 6),
                     tokens=turn.tokens,
@@ -534,6 +549,8 @@ class Engine:
         files = evidence.changed_files(self.repo, state.baseline_commit)
         work = [t for t in cfg.tasks if t.kind == "work"]
         constraints = [t for t in cfg.constraints if t.kind != "work"]
+        self._verify_timeouts = set()
+        self._test_timed_out = False
 
         hits = evidence.scope_hits(work, files)
         verifications: dict[str, evidence.RequirementResult] = {}
@@ -557,6 +574,8 @@ class Engine:
                     if task.command
                     else evidence.CommandResult(None)
                 )
+                if outcome.timed_out:
+                    self._verify_timeouts.add(task.id)
                 verifications[task.id] = evidence.RequirementResult(
                     task.id, outcome.exit_code, output=outcome.output
                 )
@@ -584,6 +603,8 @@ class Engine:
                     if constraint.command
                     else evidence.CommandResult(None)
                 )
+                if outcome.timed_out:
+                    self._verify_timeouts.add(constraint.id)
                 constraint_results[constraint.id] = evidence.RequirementResult(
                     constraint.id, outcome.exit_code, output=outcome.output
                 )
@@ -603,6 +624,7 @@ class Engine:
             test = evidence.run_command(
                 cfg.test_command or "", self.repo, timeout=cfg.verify_timeout
             )
+            self._test_timed_out = test.timed_out
         else:
             test = evidence.CommandResult(None)
         self._test_skipped = bool(cfg.test_command) and not run_suite
@@ -686,6 +708,7 @@ class Engine:
             exit_code=turn.exit_code,
             elapsed=turn.duration,
             last_event_age=turn.duration if (turn.timed_out or turn.frozen) else 0.0,
+            turn_timed_out=turn.timed_out,
             diff_hash=diff_hash,
             prev_diff_hash=state.last_diff_hash,
             changed_files=files,
@@ -948,6 +971,15 @@ class Engine:
             "failed": [failure.label() for failure in self._failures[:5]],
             "signature": obs.test_signature,
             "skipped": getattr(self, "_test_skipped", False),
+            "timed_out": self._test_timed_out,
+        }
+        ledger["timeouts"] = {
+            "turn_timeout": self.state.turn_timeout,
+            "max_wall_clock": self.state.max_wall_clock,
+            "verify_timeout": self.state.verify_timeout,
+            "freeze_after": self.state.freeze_after,
+            "verify_timed_out": sorted(self._verify_timeouts),
+            "test_timed_out": self._test_timed_out,
         }
         ledger["hidden"] = {
             name: result.to_dict() for name, result in self._hidden_results.items()
@@ -970,6 +1002,10 @@ class Engine:
                 "exit_code": turn.exit_code,
                 "duration": round(turn.duration, 2),
                 "timed_out": turn.timed_out,
+                "turn_timeout": self.state.turn_timeout,
+                "verify_timeout": self.state.verify_timeout,
+                "verify_timed_out": sorted(self._verify_timeouts),
+                "test_timed_out": self._test_timed_out,
                 "prompt_sha": sha256_bytes(prompt_path.read_text(encoding="utf-8").encode("utf-8")),
                 "changed_files": obs.changed_files,
                 "in_scope": obs.in_scope_files,
@@ -1010,6 +1046,14 @@ class Engine:
             all_done=obs.all_tasks_done,
             slop_ok=obs.slop_ok,
             slop_blocking=obs.slop_blocking,
+            timeouts={
+                "turn_timeout": self.state.turn_timeout,
+                "max_wall_clock": self.state.max_wall_clock,
+                "verify_timeout": self.state.verify_timeout,
+                "freeze_after": self.state.freeze_after,
+            },
+            verify_timed_out=sorted(self._verify_timeouts),
+            test_timed_out=self._test_timed_out,
         )
 
     def _message_for(self, task_id: str) -> str:
@@ -1072,9 +1116,9 @@ class Engine:
     def _budget_guard(diag: Diagnosis, state: RunState) -> Diagnosis:
         if diag in TERMINAL:
             return diag
-        if state.kicks >= state.max_kicks:
-            return Diagnosis.BREAKER
         if state.max_wall_clock and state.elapsed >= state.max_wall_clock:
+            return Diagnosis.TIMEOUT
+        if state.kicks >= state.max_kicks:
             return Diagnosis.BREAKER
         return diag
 

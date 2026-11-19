@@ -13,22 +13,30 @@ from .models import Diagnosis, Observation
 
 
 def diagnose(obs: Observation) -> Diagnosis:
-    # 1. Agent is actively working - leave it alone.
-    if obs.turn_state == "running" and obs.last_event_age < obs.alive_threshold:
-        return Diagnosis.ALIVE
-
-    # 2. The exam was edited. This outranks DONE: a tampered test that passes
+    # 1. The exam was edited. This outranks DONE: a tampered test that passes
     #    looks exactly like success.
     if obs.vault_tamper:
         return Diagnosis.VAULT_TAMPER
     if obs.tamper:
         return Diagnosis.TAMPER
 
-    # 3. The agent admitted it is blocked. Stop; do not burn kicks.
+    # 2. Hard time budgets are terminal and must not be reported as BREAKER.
+    #    A timed-out turn is a timeout even though the child process died while
+    #    the observation wrapper still calls it "running".
+    if obs.turn_timed_out:
+        return Diagnosis.TIMEOUT
+    if obs.max_wall_clock and obs.elapsed_total >= obs.max_wall_clock:
+        return Diagnosis.TIMEOUT
+
+    # 3. Agent is actively working - leave it alone.
+    if obs.turn_state == "running" and obs.last_event_age < obs.alive_threshold:
+        return Diagnosis.ALIVE
+
+    # 4. The agent admitted it is blocked. Stop; do not burn kicks.
     if obs.blocked_reason:
         return Diagnosis.BLOCKED
 
-    # 4. Process alive but nothing changed for too long.
+    # 5. Process alive but nothing changed for too long.
     if obs.turn_state == "running" and obs.last_event_age >= obs.freeze_after:
         unchanged = obs.prev_diff_hash is None or obs.diff_hash == obs.prev_diff_hash
         if unchanged:
@@ -76,10 +84,8 @@ def diagnose(obs: Observation) -> Diagnosis:
     if obs.same_fingerprint_streak >= 1 and obs.elapsed >= obs.stall_after:
         return Diagnosis.STALL
 
-    # 10. Budget exhausted.
+    # 10. Budget exhausted. Wall-clock exhaustion was handled above as TIMEOUT.
     if obs.kicks >= obs.max_kicks:
-        return Diagnosis.BREAKER
-    if obs.max_wall_clock and obs.elapsed_total >= obs.max_wall_clock:
         return Diagnosis.BREAKER
 
     # 11. Fallback: work remains, keep going.

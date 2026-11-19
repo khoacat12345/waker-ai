@@ -164,7 +164,9 @@ class RunState:
     elapsed_offset: float = 0.0
     max_kicks: int = 5
     kicks: int = 0
+    profile: str | None = None
     turn_timeout: float = 900.0
+    verify_timeout: float = 300.0
     freeze_after: float = 300.0
     alive_threshold: float = 120.0
     max_wall_clock: float = 5400.0

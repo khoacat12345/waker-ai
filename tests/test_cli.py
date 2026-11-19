@@ -123,6 +123,57 @@ def _run_good(repo: Path, tasks: list[Task]):
     return Engine(config).run()
 
 
+def test_run_profile_large_overrides_old_timeout_defaults(
+    repo: Path, tasks: list[Task], tmp_path: Path, capsys
+):
+    from waker.models import PlanBundle
+    from waker.planner import write_tasks
+    from waker.state import RunPaths, RunState, latest_run
+
+    contract = tmp_path / "tasks.yaml"
+    write_tasks(contract, PlanBundle(tasks=tasks))
+    code = main(
+        [
+            "run",
+            "--repo",
+            str(repo),
+            "--tasks",
+            str(contract),
+            "--test",
+            exists_cmd("src/a.txt", "src/b.txt"),
+            "--agent",
+            fake_agent("good"),
+            "--adapter",
+            "generic",
+            "--profile",
+            "large",
+        ]
+    )
+    assert code == 0
+    capsys.readouterr()
+
+    run_id = latest_run(repo)
+    assert run_id
+    state = RunState.load(RunPaths(repo, run_id).state)
+    assert state.profile == "large"
+    assert state.max_kicks == 8
+    assert state.turn_timeout == 1800
+    assert state.verify_timeout == 900
+    assert state.freeze_after == 600
+    assert state.max_wall_clock == 18000
+
+    code = main(["status", "--repo", str(repo), "--run", run_id, "--format", "json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["profile"] == "large"
+    assert payload["timeouts"] == {
+        "turn_timeout": 1800,
+        "max_wall_clock": 18000,
+        "verify_timeout": 900,
+        "freeze_after": 600,
+    }
+
+
 def test_status_json_after_run(repo: Path, tasks: list[Task], capsys):
     result = _run_good(repo, tasks)
     capsys.readouterr()

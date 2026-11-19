@@ -81,6 +81,29 @@ def test_frozen_agent_is_detected(repo: Path, tasks: list[Task]):
     assert "FROZEN" in labels(repo, result.run_id)
 
 
+def test_turn_timeout_is_reported_as_timeout(repo: Path, tasks: list[Task]):
+    result = Engine(
+        config(
+            repo,
+            tasks,
+            "freeze",
+            max_kicks=1,
+            turn_timeout=0.3,
+            freeze_after=10.0,
+            freeze_probe=False,
+        )
+    ).run()
+
+    assert result.diagnosis is Diagnosis.TIMEOUT
+    assert result.exit_code == 7
+    assert "TIMEOUT" in labels(repo, result.run_id)
+    turn_end = next(
+        record for record in events(repo, result.run_id) if record.get("t") == "turn_end"
+    )
+    assert turn_end["timed_out"] is True
+    assert turn_end["turn_timeout"] == 0.3
+
+
 def test_blocked_agent_stops_without_burning_kicks(repo: Path, tasks: list[Task]):
     result = Engine(config(repo, tasks, "blocked")).run()
 

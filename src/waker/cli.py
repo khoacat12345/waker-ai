@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import __version__, planner, update
 from . import doctor as doctor_module
-from .budget import PROFILE_NAMES
+from .budget import PROFILE_NAMES, resolve_profile
 from .adapters.claude import ClaudeAdapter
 from .adapters.generic import GenericProcessAdapter
 from .adapters.opencode import OpenCodeAdapter
@@ -56,6 +56,25 @@ def _parse_bundle(args) -> planner.PlanBundle:
         )
     except (RuntimeError, ValueError) as exc:
         raise SystemExit(f"planner error: {exc}")
+
+
+def _runtime_settings(args) -> dict[str, float | int | str]:
+    """Resolve a profile and let explicit CLI values win."""
+    profile_name = getattr(args, "profile", None) or "medium"
+    profile = resolve_profile(profile_name)
+
+    def pick(field: str) -> float | int:
+        raw = getattr(args, field, None)
+        return getattr(profile, field) if raw is None else raw
+
+    return {
+        "profile": profile.name,
+        "max_kicks": pick("max_kicks"),
+        "turn_timeout": pick("turn_timeout"),
+        "verify_timeout": pick("verify_timeout"),
+        "freeze_after": pick("freeze_after"),
+        "max_wall_clock": pick("max_wall_clock"),
+    }
 
 
 def _load_contract(args) -> planner.PlanBundle:
@@ -156,7 +175,7 @@ def cmd_run(args) -> int:
         )
         return 2
     adapter_name = args.adapter or "generic"
-    max_kicks = args.max_kicks if args.max_kicks is not None else 5
+    settings = _runtime_settings(args)
     config = EngineConfig(
         repo=args.repo,
         tasks=tasks,
@@ -165,11 +184,12 @@ def cmd_run(args) -> int:
         test_command=args.test,
         prompt=args.prompt or "",
         contract_path=args.tasks,
-        max_kicks=max_kicks,
-        turn_timeout=args.turn_timeout,
-        verify_timeout=args.verify_timeout,
-        freeze_after=args.freeze_after,
-        max_wall_clock=args.max_wall_clock,
+        max_kicks=int(settings["max_kicks"]),
+        profile=str(settings["profile"]),
+        turn_timeout=float(settings["turn_timeout"]),
+        verify_timeout=float(settings["verify_timeout"]),
+        freeze_after=float(settings["freeze_after"]),
+        max_wall_clock=float(settings["max_wall_clock"]),
         max_cost_usd=args.max_cost,
         freeze_probe=not args.no_freeze_probe,
         use_job=not args.no_job,
@@ -212,12 +232,13 @@ def _run_flags(args) -> list[str]:
             flags.extend([flag, str(value)])
     if args.adapter:
         flags.extend(["--adapter", args.adapter])
-    max_kicks = args.max_kicks if args.max_kicks is not None else 5
-    flags.extend(["--max-kicks", str(max_kicks)])
-    flags.extend(["--turn-timeout", str(args.turn_timeout)])
-    flags.extend(["--verify-timeout", str(args.verify_timeout)])
-    flags.extend(["--freeze-after", str(args.freeze_after)])
-    flags.extend(["--max-wall-clock", str(args.max_wall_clock)])
+    settings = _runtime_settings(args)
+    flags.extend(["--profile", str(settings["profile"])])
+    flags.extend(["--max-kicks", str(settings["max_kicks"])])
+    flags.extend(["--turn-timeout", str(settings["turn_timeout"])])
+    flags.extend(["--verify-timeout", str(settings["verify_timeout"])])
+    flags.extend(["--freeze-after", str(settings["freeze_after"])])
+    flags.extend(["--max-wall-clock", str(settings["max_wall_clock"])])
     flags.extend(["--full-suite-every", str(args.full_suite_every)])
     if args.max_cost:
         flags.extend(["--max-cost", str(args.max_cost)])
@@ -340,7 +361,14 @@ def cmd_status(args) -> int:
             "diagnosis": state.diagnosis,
             "kicks": state.kicks,
             "max_kicks": state.max_kicks,
+            "profile": state.profile,
             "elapsed": round(state.elapsed, 1),
+            "timeouts": {
+                "turn_timeout": state.turn_timeout,
+                "max_wall_clock": state.max_wall_clock,
+                "verify_timeout": state.verify_timeout,
+                "freeze_after": state.freeze_after,
+            },
             "cost_usd": round(state.cost_usd, 6),
             "max_cost_usd": state.max_cost_usd,
             "tasks": ledger.get("tasks", {}),
@@ -730,13 +758,14 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
         help="do not suppress pre-existing anti-slop debt",
     )
     parser.add_argument("--repo", default=".")
+    parser.add_argument("--profile", choices=PROFILE_NAMES, default=None)
     parser.add_argument("--max-kicks", type=int, default=None)
     parser.add_argument("--max-cost", type=float, default=0.0, help="USD; 0 = disable cost guard")
     parser.add_argument("--full-suite-every", type=int, default=0, help="run the full suite every N kicks")
-    parser.add_argument("--turn-timeout", type=float, default=900.0)
-    parser.add_argument("--verify-timeout", type=float, default=300.0)
-    parser.add_argument("--freeze-after", type=float, default=300.0)
-    parser.add_argument("--max-wall-clock", type=float, default=5400.0)
+    parser.add_argument("--turn-timeout", type=float, default=None)
+    parser.add_argument("--verify-timeout", type=float, default=None)
+    parser.add_argument("--freeze-after", type=float, default=None)
+    parser.add_argument("--max-wall-clock", type=float, default=None)
     parser.add_argument("--no-freeze-probe", action="store_true")
     parser.add_argument("--no-job", action="store_true")
     parser.add_argument("--run-id")

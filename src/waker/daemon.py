@@ -139,7 +139,14 @@ def _run_status(root: Path, run_id: str | None) -> dict[str, Any]:
         "diagnosis": state.diagnosis,
         "kicks": state.kicks,
         "max_kicks": state.max_kicks,
+        "profile": state.profile,
         "elapsed": round(state.elapsed, 1),
+        "timeouts": {
+            "turn_timeout": state.turn_timeout,
+            "max_wall_clock": state.max_wall_clock,
+            "verify_timeout": state.verify_timeout,
+            "freeze_after": state.freeze_after,
+        },
         "cost_usd": round(state.cost_usd, 6),
         "max_cost_usd": state.max_cost_usd,
         "tasks": ledger.get("tasks", {}),
@@ -159,6 +166,7 @@ def _build_run_args(payload: dict[str, Any]) -> list[str]:
         "adapter": "--adapter",
         "model": "--model",
         "repo": "--repo",
+        "profile": "--profile",
     }
     for key, flag in mapping.items():
         value = payload.get(key)
@@ -168,6 +176,7 @@ def _build_run_args(payload: dict[str, Any]) -> list[str]:
         "max_kicks": "--max-kicks",
         "max_cost": "--max-cost",
         "turn_timeout": "--turn-timeout",
+        "verify_timeout": "--verify-timeout",
         "freeze_after": "--freeze-after",
         "max_wall_clock": "--max-wall-clock",
     }

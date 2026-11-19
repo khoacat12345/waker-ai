@@ -88,6 +88,26 @@ def test_breaker_when_kicks_exhausted():
     assert diagnose(obs(kicks=5, max_kicks=5)) is Diagnosis.BREAKER
 
 
+def test_turn_timeout_is_not_breaker():
+    assert (
+        diagnose(obs(turn_timed_out=True, turn_state="running", last_event_age=0))
+        is Diagnosis.TIMEOUT
+    )
+
+
+def test_wall_clock_timeout_is_not_breaker():
+    assert (
+        diagnose(obs(elapsed_total=101, max_wall_clock=100)) is Diagnosis.TIMEOUT
+    )
+
+
+def test_large_profile_does_not_hit_old_90_minute_cap():
+    assert (
+        diagnose(obs(elapsed_total=6000, max_wall_clock=18000, kicks=0))
+        is Diagnosis.PARTIAL
+    )
+
+
 def test_cost_guard_is_a_breaker():
     assert diagnose(obs(cost_usd=1.0, max_cost_usd=0.5)) is Diagnosis.BREAKER
     assert diagnose(obs(cost_usd=0.4, max_cost_usd=0.5)) is Diagnosis.PARTIAL

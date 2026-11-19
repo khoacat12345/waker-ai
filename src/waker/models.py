@@ -28,13 +28,21 @@ class Diagnosis(str, Enum):
     THRASH = "THRASH"
     STALL = "STALL"
     BREAKER = "BREAKER"
+    TIMEOUT = "TIMEOUT"
     PARTIAL = "PARTIAL"
     SLOP = "SLOP"
 
 
 #: Diagnoses that stop the run immediately.
 TERMINAL: frozenset[Diagnosis] = frozenset(
-    {Diagnosis.DONE, Diagnosis.BLOCKED, Diagnosis.BREAKER, Diagnosis.SUSPECT_TEST, Diagnosis.VAULT_TAMPER}
+    {
+        Diagnosis.DONE,
+        Diagnosis.BLOCKED,
+        Diagnosis.BREAKER,
+        Diagnosis.TIMEOUT,
+        Diagnosis.SUSPECT_TEST,
+        Diagnosis.VAULT_TAMPER,
+    }
 )
 
 #: Exit code per terminal diagnosis.
@@ -45,6 +53,7 @@ EXIT_CODES: dict[Diagnosis, int] = {
     Diagnosis.SUSPECT_TEST: 4,
     Diagnosis.VAULT_TAMPER: 5,
     Diagnosis.SLOP: 6,
+    Diagnosis.TIMEOUT: 7,
 }
 
 
@@ -271,6 +280,7 @@ class Observation:
     exit_code: int | None = None
     elapsed: float = 0.0
     last_event_age: float = 0.0
+    turn_timed_out: bool = False
     diff_hash: str = ""
     prev_diff_hash: str | None = None
     changed_files: list[str] = field(default_factory=list)
