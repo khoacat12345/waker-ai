@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from . import globs, winproc
-from .models import Task
+from .models import PhaseSpec, Task
 from .state import RunPaths, RunState, read_json
 from .tui import quality_line
 
@@ -197,6 +197,12 @@ class WakerViewModel:
     quality: dict[str, Any] = field(default_factory=dict)
     out_of_scope: list[str] = field(default_factory=list)
     changed_files: list[str] = field(default_factory=list)
+    phase_id: str | None = None
+    phase_name: str = ""
+    phase_index: int = 0
+    phase_total: int = 0
+    phase_elapsed: float = 0.0
+    phase_budget: float | None = None
 
     @property
     def done(self) -> int:
@@ -221,6 +227,12 @@ class WakerViewModel:
     @property
     def warnings(self) -> int:
         return int(self.quality.get("warnings", 0))
+
+    @property
+    def phase_percent(self) -> float:
+        if not self.phase_budget or self.phase_budget <= 0:
+            return 0.0
+        return min(100.0, max(0.0, self.phase_elapsed / self.phase_budget * 100))
 
     @classmethod
     def from_paths(cls, paths: RunPaths) -> "WakerViewModel":
@@ -352,6 +364,56 @@ class WakerViewModel:
         )
         agent = _agent_label(state)
         goal = _goal(state, task_objects)
+
+        phase_specs: list[PhaseSpec] = []
+        for item in getattr(state, "phases", []) or []:
+            if isinstance(item, dict):
+                try:
+                    phase_specs.append(PhaseSpec.from_dict(item))
+                except (TypeError, ValueError):
+                    continue
+        phase_id: str | None = None
+        phase_name = ""
+        phase_index = 0
+        phase_budget: float | None = None
+        phase_elapsed = 0.0
+        if phase_specs:
+            records = ledger.get("tasks", {})
+            for spec in phase_specs:
+                task_ids = [task.id for task in task_objects if task.phase == spec.id]
+                if task_ids and any(
+                    records.get(task_id, {}).get("status") != "done"
+                    for task_id in task_ids
+                ):
+                    phase_id = spec.id
+                    break
+            if phase_id is None:
+                phase_id = phase_specs[-1].id
+            selected = next(
+                (spec for spec in phase_specs if spec.id == phase_id),
+                phase_specs[-1],
+            )
+            phase_name = selected.name or selected.id
+            phase_index = phase_specs.index(selected) + 1
+            try:
+                phase_budget = selected.budget_seconds
+            except ValueError:
+                phase_budget = None
+            accumulated = getattr(state, "phase_elapsed", {}) or {}
+            phase_elapsed = float(accumulated.get(phase_id, 0.0))
+            if (
+                state.status == "running"
+                and state.phase_id == phase_id
+                and state.phase_started_ts is not None
+            ):
+                phase_elapsed += max(0.0, time.time() - state.phase_started_ts)
+            elif (
+                len(phase_specs) == 1
+                and state.phase_id is None
+                and phase_elapsed == 0
+            ):
+                phase_elapsed = state.elapsed
+
         return cls(
             state=state,
             ledger=ledger,
@@ -366,6 +428,12 @@ class WakerViewModel:
             quality=quality,
             out_of_scope=out_of_scope,
             changed_files=changed,
+            phase_id=phase_id,
+            phase_name=phase_name,
+            phase_index=phase_index,
+            phase_total=len(phase_specs),
+            phase_elapsed=phase_elapsed,
+            phase_budget=phase_budget,
         )
 
 
@@ -517,6 +585,22 @@ def fmt_duration(seconds: float) -> str:
     if hours:
         return f"{hours}h{minutes:02d}m"
     return f"{minutes:02d}:{sec:02d}"
+
+
+def fmt_clock(seconds: float) -> str:
+    """Render H:MM:SS for the phase budget line."""
+    seconds = int(max(0, seconds))
+    minutes, sec = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours:02d}:{minutes:02d}:{sec:02d}"
+
+
+def _phase_color(percent: float) -> str:
+    if percent >= 95:
+        return _DECK_RED
+    if percent >= 80:
+        return _DECK_YELLOW
+    return _DECK_GREEN
 
 
 def _task_rows(state: RunState, ledger: dict[str, Any]) -> list[list[str]]:
@@ -911,6 +995,26 @@ def build_cyber_deck(
             padding=(0, 1),
         )
 
+    def phase_line() -> Text | None:
+        if not view.phase_id or not view.phase_budget:
+            return None
+        percent = view.phase_percent
+        color = _phase_color(percent)
+        filled = int(round(10 * max(0.0, min(100.0, percent)) / 100))
+        bar = "#" * filled + "-" * (10 - filled)
+        line = Text()
+        line.append(
+            f"PHASE {view.phase_index}/{view.phase_total}  ",
+            style=f"bold {color}",
+        )
+        line.append(_short(view.phase_name, 20 if compact else 28), style=_DECK_TEXT)
+        line.append(
+            f"  {fmt_clock(view.phase_elapsed)} / {fmt_clock(view.phase_budget)}  ",
+            style=_DECK_MUTED,
+        )
+        line.append(f"[{bar}]", style=f"bold {color}")
+        return line
+
     header = Text()
     header.append("✨ WAKER CYBER-DECK", style=f"bold {_DECK_CYAN}")
     header.append("  ·  v2.2  ·  ", style=_DECK_MUTED)
@@ -938,13 +1042,12 @@ def build_cyber_deck(
         main.add_column(ratio=3)
         main.add_column(ratio=2)
         main.add_row(task_panel(), telemetry_panel())
-    body = Group(
-        header,
-        goal,
-        main,
-        event_panel(),
-        footer,
-    )
+    body_items = [header, goal]
+    phase = phase_line()
+    if phase is not None:
+        body_items.append(phase)
+    body_items.extend([main, event_panel(), footer])
+    body = Group(*body_items)
     border_style = (
         _DECK_GREEN
         if view.state.status == "DONE"

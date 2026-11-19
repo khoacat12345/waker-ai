@@ -291,14 +291,76 @@ def test_preview_slop_border_and_spinner_animation():
     assert first.export_text() != second.export_text()
 
 
+def test_viewmodel_phase_and_budget_line():
+    from rich.console import Console
+
+    state = make_state(done=1)
+    state.status = "running"
+    state.diagnosis = "SLOP"
+    state.phases = [
+        {"id": "P1", "name": "Core", "budget": "1h"},
+        {"id": "P2", "name": "Docs", "budget": "2h"},
+    ]
+    state.tasks[0]["phase"] = "P1"
+    state.tasks[1]["phase"] = "P2"
+    state.phase_id = "P2"
+    state.phase_started_ts = None
+    state.phase_elapsed = {"P2": 4330}
+    ledger = {
+        "tasks": {
+            "T1": {"status": "done", "evidence": {"files": ["src/a.py"], "gate": "pass"}},
+            "T2": {"status": "pending", "evidence": None},
+        },
+        "quality": {"score": 76, "grade": "C", "errors": 0, "warnings": 8},
+    }
+
+    view = WakerViewModel.from_state(state, ledger)
+    assert view.phase_id == "P2"
+    assert view.phase_name == "Docs"
+    assert view.phase_index == 2
+    assert view.phase_total == 2
+    assert view.phase_elapsed == 4330
+    assert view.phase_budget == 7200
+    assert view.phase_percent == 4330 / 7200 * 100
+
+    console = Console(width=120, record=True, force_terminal=True)
+    console.print(build_cyber_deck(view, compact=False, frame=0, fx=True))
+    text = console.export_text()
+    assert "PHASE 2/2" in text
+    assert "Docs" in text
+    assert "01:12:10 / 02:00:00" in text
+    assert "[######----]" in text
+
+
+def test_phase_colors_use_usage_thresholds():
+    from waker import ui
+
+    assert ui._phase_color(79.9) == ui._DECK_GREEN
+    assert ui._phase_color(80.0) == ui._DECK_YELLOW
+    assert ui._phase_color(94.9) == ui._DECK_YELLOW
+    assert ui._phase_color(95.0) == ui._DECK_RED
+
+
 def test_deck_height_fits_terminal_budget():
     from rich.console import Console
 
     state = make_state(done=1)
     state.status = "running"
     state.diagnosis = "SLOP"
+    state.phases = [
+        {"id": "P1", "name": "Core", "budget": "1h"},
+        {"id": "P2", "name": "Docs", "budget": "2h"},
+    ]
+    state.tasks[0]["phase"] = "P1"
+    state.tasks[1]["phase"] = "P2"
+    state.phase_id = "P2"
+    state.phase_started_ts = None
+    state.phase_elapsed = {"P2": 4330}
     ledger = {
-        "tasks": {"T1": {"status": "done", "evidence": {"files": ["src/a.py"], "gate": "pass"}}},
+        "tasks": {
+            "T1": {"status": "done", "evidence": {"files": ["src/a.py"], "gate": "pass"}},
+            "T2": {"status": "pending", "evidence": None},
+        },
         "quality": {"score": 76, "grade": "C", "errors": 0, "warnings": 8},
     }
     view = WakerViewModel.from_state(state, ledger)

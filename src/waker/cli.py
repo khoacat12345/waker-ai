@@ -186,6 +186,7 @@ def cmd_run(args) -> int:
         contract_path=args.tasks,
         max_kicks=int(settings["max_kicks"]),
         profile=str(settings["profile"]),
+        phases=bundle.phases,
         turn_timeout=float(settings["turn_timeout"]),
         verify_timeout=float(settings["verify_timeout"]),
         freeze_after=float(settings["freeze_after"]),

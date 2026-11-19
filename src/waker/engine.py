@@ -19,6 +19,7 @@ from .models import (
     Diagnosis,
     Failure,
     Observation,
+    PhaseSpec,
     RunResult,
     Task,
     TurnResult,
@@ -86,6 +87,7 @@ class EngineConfig:
     test_globs: list[str] = field(default_factory=lambda: list(DEFAULT_TEST_GLOBS))
     max_kicks: int = 5
     profile: str | None = None
+    phases: list[PhaseSpec] = field(default_factory=list)
     turn_timeout: float = 900.0
     verify_timeout: float = 300.0
     freeze_after: float = 300.0
@@ -174,6 +176,7 @@ class Engine:
         paths = RunPaths(self.repo, run_id)
         acquire_run_lock(paths, run_id)
         events = EventLog(paths.events)
+        initial_phase = cfg.phases[0].id if cfg.phases else None
         state = RunState(
             run_id=run_id,
             repo=str(self.repo),
@@ -187,6 +190,9 @@ class Engine:
             tasks=[t.to_dict() for t in cfg.tasks],
             session_id=f"ses_waker_{run_id}",
             constraints=[t.to_dict() for t in cfg.constraints],
+            phases=[phase.to_dict() for phase in cfg.phases],
+            phase_id=initial_phase,
+            phase_started_ts=time.time() if initial_phase else None,
             adapter=cfg.adapter_name,
             model=cfg.model,
             permission_mode=cfg.permission_mode,
@@ -279,6 +285,7 @@ class Engine:
 
         tasks = [Task.from_dict(item) for item in state.tasks]
         constraints = [Task.from_dict(item) for item in state.constraints]
+        phases = [PhaseSpec.from_dict(item) for item in state.phases]
         cfg = EngineConfig(
             repo=str(root),
             tasks=tasks,
@@ -289,6 +296,7 @@ class Engine:
             contract_path=state.contract_path,
             max_kicks=max_kicks or state.max_kicks,
             profile=state.profile,
+            phases=phases,
             turn_timeout=state.turn_timeout,
             verify_timeout=state.verify_timeout,
             freeze_after=state.freeze_after,
@@ -316,6 +324,11 @@ class Engine:
                 engine._verify_cache = {}
 
         previous_status = state.status
+        if state.phase_id and state.phase_started_ts:
+            state.phase_elapsed[state.phase_id] = state.phase_elapsed.get(
+                state.phase_id, 0.0
+            ) + max(0.0, time.time() - state.phase_started_ts)
+            state.phase_started_ts = time.time()
         state.generation += 1
         state.elapsed_offset += state.elapsed
         state.started_ts = time.time()
@@ -471,6 +484,7 @@ class Engine:
                 if not abort_slop:
                     diag = self._budget_guard(diag, state)
                 self._record(kick, obs, diag, turn, prompt_path)
+                self._sync_phase()
 
                 self.events.append(
                     "diagnose",
@@ -1056,6 +1070,36 @@ class Engine:
             test_timed_out=self._test_timed_out,
         )
 
+    def _current_phase_id(self) -> str | None:
+        if not self.config.phases or self.paths is None:
+            return None
+        ledger = read_json(self.paths.ledger) if self.paths.ledger.exists() else {}
+        records = ledger.get("tasks", {})
+        all_tasks = [*self.config.tasks, *self.config.constraints]
+        for phase in self.config.phases:
+            task_ids = [task.id for task in all_tasks if task.phase == phase.id]
+            if not task_ids:
+                continue
+            if any(records.get(task_id, {}).get("status") != "done" for task_id in task_ids):
+                return phase.id
+        return self.config.phases[-1].id
+
+    def _sync_phase(self) -> None:
+        state = self.state
+        if state is None or self.paths is None:
+            return
+        current = self._current_phase_id()
+        if current == state.phase_id:
+            return
+        now = time.time()
+        if state.phase_id and state.phase_started_ts is not None:
+            state.phase_elapsed[state.phase_id] = state.phase_elapsed.get(
+                state.phase_id, 0.0
+            ) + max(0.0, now - state.phase_started_ts)
+        state.phase_id = current
+        state.phase_started_ts = now if current else None
+        state.save(self.paths.state)
+
     def _message_for(self, task_id: str) -> str:
         result = self._verify_results.get(task_id)
         texts = result.output if result else ""
@@ -1084,6 +1128,11 @@ class Engine:
         state.status = "aborted" if aborted else diag.value
         state.diagnosis = diag.value
         state.ended_ts = time.time()
+        if state.phase_id and state.phase_started_ts is not None:
+            state.phase_elapsed[state.phase_id] = state.phase_elapsed.get(
+                state.phase_id, 0.0
+            ) + max(0.0, state.ended_ts - state.phase_started_ts)
+            state.phase_started_ts = None
         state.save(self.paths.state)
 
         ledger = read_json(self.paths.ledger)

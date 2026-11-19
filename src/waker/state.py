@@ -152,6 +152,10 @@ class RunState:
     session_id: str
     agent_session_id: str | None = None
     constraints: list[dict[str, Any]] = field(default_factory=list)
+    phases: list[dict[str, Any]] = field(default_factory=list)
+    phase_id: str | None = None
+    phase_started_ts: float | None = None
+    phase_elapsed: dict[str, float] = field(default_factory=dict)
     adapter: str = "generic"
     model: str | None = None
     permission_mode: str = "acceptEdits"
