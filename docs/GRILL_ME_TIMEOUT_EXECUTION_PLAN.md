@@ -1,8 +1,10 @@
 # Execution Plan — Grill-Me & Timeout Profiles
 
-**Status:** READY FOR APPROVAL — chưa bắt đầu code.
+**Status:** IMPLEMENTED — E0–E7 complete; v2.2.0 package built and
+`twine check` validated. Publish pending approval.
 **Design:** [`plan.md` §27](../plan.md#27-approved--grill-me--timeout-profiles)
-**Baseline:** `main` at `ca23827`; full pytest must be green before E0 starts.
+**Baseline:** `main` progressed through E0–E7; final release commit is
+`chore(release): bump version to 2.2.0`.
 **Release:** v2.2.0 cho phần cơ bản; v2.3.0 cho phase-budget enforcement đầy đủ.
 
 ## Nguyên tắc thực thi

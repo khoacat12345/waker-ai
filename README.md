@@ -1,4 +1,4 @@
-![Waker v2.0 anti-slop terminal demo: kick 0 SLOP, kick 1 SLOP, kick 2 DONE](docs/demo.gif)
+![Waker v2.2 anti-slop terminal demo: kick 0 SLOP, kick 1 SLOP, kick 2 DONE](docs/demo.gif)
 
 # waker-ai
 
@@ -130,6 +130,69 @@ waker install-skill --for generic             # AGENTS.md block (idempotent)
 Skills are loaded when the chat session starts — restart your CLI after
 installing. A `pip install` cannot write into your agent's config by itself
 (that is a security boundary); `waker setup` is the one-time post-install step.
+
+## v2.2 — Chatbox-first and time-aware
+
+### Grill-Me only when the prompt is vague
+
+The chatbox follows a conditional **Grill-Me Check** before planning:
+
+- Prompt already has goal, scope, verify and required inputs:
+  **silent-pass, 0 questions**.
+- Prompt is missing blocking information: ask at most **3 questions, one round**.
+- Questions are blocking only; preferences/naming/style are never grilled.
+- “Tùy bạn” for a preference is recorded as a preference. It is never used to
+  invent `scope` or `verify`.
+- The instruction lives in the `waker` skill; code-enforced
+  `questions.yaml` is deferred to v2.3.
+
+### Phase selection
+
+```bash
+# small task: one implicit phase, no phase question
+waker plan --prompt "..." --phases none
+
+# user supplies/edits phases
+waker plan --prompt "..." --phases manual
+
+# large project: rule-based proposal + budget, user approves
+waker plan --prompt "..." --phases auto --profile large --json
+```
+
+`auto` groups existing tasks by phase/scope and allocates phase budgets from the
+selected profile. It never invents scope or verify. The chatbox prints the plan,
+waits for `ok` / `1` / `chạy`, and supports natural-language edits such as
+“tăng P2 lên 3h, P1 còn 30m” before the contract is frozen. Small clear tasks
+use the `/waker` fast path; non-TTY/chatbox mode never reads raw terminal keys.
+
+### Timeout profiles
+
+| Profile | Turn | Run | Verify | Freeze | Kicks |
+|---|---:|---:|---:|---:|---:|
+| `small` | 5m | 20m | 2m | 3m | 3 |
+| `medium` | 15m | 90m | 5m | 5m | 5 |
+| `large` | 30m | 5h | 15m | 10m | 8 |
+| `overnight` | 45m | 8h | 30m | 15m | 12 |
+
+```bash
+waker run --tasks .waker/tasks.yaml --profile large ...
+waker start --profile overnight ...
+```
+
+Explicit flags still win over profile values. Wall-clock or turn exhaustion now
+returns diagnosis **`TIMEOUT`** (exit 7), separate from `BREAKER` (kick/cost
+limits). `verify_timeout` and `freeze_after` remain distinct signals.
+
+### Phase display
+
+The Cyber-Deck shows the current phase and budget:
+
+```text
+PHASE 2/2  Docs  01:12:10 / 02:00:00  [######----]
+```
+
+Colors are green under 80% of phase budget, yellow from 80%, red from 95%.
+Phase timing comes from the run state, not from a synthetic timer.
 
 ## Update notifications
 
@@ -331,7 +394,7 @@ Importantly: **cost guard is exact only for OpenCode.** It reads
 ## CLI
 
 ```text
-waker plan        prompt -> contract (0 token, or --via opencode for vague prompts)
+waker plan        prompt -> contract (0 token; --phases none|manual|auto, --profile)
 waker lint        contract validation (0 token)
 waker detect      detect pytest / npm / cargo / go / make test
 waker run         supervise in the foreground (--resume <id> to continue)
@@ -356,12 +419,14 @@ script lives in [`docs/demo-45s.md`](docs/demo-45s.md).
 ## Design
 
 Full design and decision log: [`plan.md`](plan.md).
+Release notes: [`docs/release-v2.2.0.md`](docs/release-v2.2.0.md).
 Phase reports: `.waker/runs/phase1_report.md`, `phase2_report.md`, `phase3_report.md`.
 
 ## Status
 
-**v2.0.0 — Anti-Slop AI Code Guardian** — default-on deterministic AST
-watchdog, baseline tracking, selective rollback, SARIF, and a Rich quality TUI.
+**v2.2.0 — Chatbox Grill-Me, timeout profiles, phase budget display** — plus
+the default-on deterministic AST anti-slop watchdog, baseline tracking,
+selective rollback, SARIF, and the Rich Cyber-Deck.
 
 Maturity:
 
@@ -372,7 +437,7 @@ Maturity:
 - **PTY T3** — Windows only; POSIX support is planned.
 - **Cost guard** — exact for OpenCode, best-effort for Claude, 0 for generic/PTY.
 
-PyPI: v2.0.0 distributions are built and `twine check` validated; publish
+PyPI: v2.2.0 distributions are built and `twine check` validated; publish
 after release approval. The current stable install remains `pip install
 waker-ai` (pin `waker-ai==1.2.0` for pre-anti-slop behavior).
 

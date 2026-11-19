@@ -2,6 +2,59 @@
 
 All notable changes to `waker-ai`.
 
+## v2.2.0 — 2026-11-20
+
+**Chatbox-first Grill-Me, timeout profiles and phase budget display.**
+
+This release makes Waker easier to use from a chatbox and gives large projects
+time budgets that fit the work instead of the old 90-minute ceiling.
+
+### Added
+
+- **Conditional Grill-Me** in the `waker` skill. Clear prompts silent-pass with
+  zero questions; vague prompts get at most three blocking questions in one
+  round. No preference interrogation and no invented scope/verify.
+- **Chatbox phase flow**: `waker plan --phases none|manual|auto`, phase table
+  review, natural-language budget edits, `ok` / `1` / `chạy` approval and a
+  small-task fast path. No raw terminal key reads in chatbox/non-TTY mode.
+- **Phase contract schema**: top-level `phases` (`id`, `name`, `budget`) and
+  task `phase` are parsed, validated and round-tripped with backward-compatible
+  `P1` defaulting for legacy YAML.
+- **Timeout profiles**: `small`, `medium`, `large`, `overnight`; `--profile`
+  on `run`/`start`; explicit timeout flags still take precedence.
+- **`TIMEOUT` diagnosis** (exit 7) for turn or wall-clock exhaustion, separate
+  from `BREAKER` (kick/cost limits). `FROZEN` remains its own diagnosis.
+- **Timeout telemetry**: all four values (`turn_timeout`, `max_wall_clock`,
+  `verify_timeout`, `freeze_after`) persist in `run.json`, events and
+  `waker status --format json`; verify/test timeouts are recorded separately.
+- **Phase display** on the Cyber-Deck:
+  `PHASE n/N  <name>  elapsed / budget  [########--]`, with green/yellow/red
+  thresholds at 80% and 95% of the phase budget.
+
+### Changed
+
+- `waker plan` now supports `--phases`, `--profile` and machine-readable
+  `--json` phase data.
+- `waker status` markdown shows the four timeout values.
+- Legacy contracts without `phases` continue to run with implicit `P1`.
+- Large and overnight profiles use 5h and 8h wall clocks respectively instead
+  of the old 90-minute default.
+
+### Deferred to v2.3.0
+
+- Hard phase-budget enforcement and automatic phase transitions.
+- `resume --extend`, historical budget suggestions.
+- Code-enforced `waker grill` / `questions.yaml` if the instruction-only gate
+  is not sufficient.
+
+### Verification
+
+- Full pytest suite: **332 collected, 331 passed, 1 skipped**, zero failures.
+  The skip is the opt-in real-OpenCode E2E test.
+- `python -m build`: `waker_ai-2.2.0.tar.gz` + wheel.
+- `twine check dist/waker_ai-2.2.0*`: both **PASSED**.
+- `waker.__version__` reports `2.2.0`.
+
 ## v2.0.0 — 2026-11-16
 
 **Waker Anti-Slop AI Code Guardian (default-on).**

@@ -13,6 +13,8 @@
 > `depends_on` enforcement, `fail_to_pass` baseline sets, Phase 6.5 coverage
 > audit, notifications, `--yes` contract confirmation, hunk-level revert,
 > mutation/coverage adapters, API/async/coupling rules, and multi-repo.
+> **Current release:** **v2.2.0** — conditional Grill-Me, timeout profiles,
+> phase budget display (see §27). Package built; publish pending approval.
 > **Planned v2.2:** Grill-Me contract questions and compact real-time
 > CLI/TUI checklist (see §26).
 > **Approved next:** conditional Grill-Me + phase selection/timeout profiles
@@ -1964,4 +1966,4 @@ Nếu instruction-only vẫn bị bỏ qua, làm theo §26.8:
 
 **Execution plan:** [`docs/GRILL_ME_TIMEOUT_EXECUTION_PLAN.md`](docs/GRILL_ME_TIMEOUT_EXECUTION_PLAN.md)
 
-**Checkpoint: APPROVED — chốt thiết kế; triển khai cùng release UI Cyber-Deck v2.2.0.**
+**Checkpoint: RELEASED — v2.2.0 package built and `twine check` validated; publish pending approval.**
