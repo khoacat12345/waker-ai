@@ -254,6 +254,43 @@ def test_slop_uses_orange_border_and_done_stops_beam():
     assert done_deck.beam is False
 
 
+def test_preview_slop_border_and_spinner_animation():
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    from rich.console import Console
+
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location(
+        "waker_preview_for_test", root / "scripts" / "preview_waker_deck.py"
+    )
+    assert spec is not None and spec.loader is not None
+    preview = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = preview
+    spec.loader.exec_module(preview)
+
+    slop = preview.PHASES[1]
+    deck = preview.render(slop, 10, 0, "\u280b", compact=False, frame_idx=0)
+    assert deck.border_style == preview.ORANGE
+    assert deck.beam is True
+
+    done = preview.render(preview.PHASES[-1], 151, 0, "\u2713", compact=False, frame_idx=0)
+    assert done.border_style == preview.GREEN
+    assert done.beam is False
+
+    for width, limit in ((120, 22), (80, 24)):
+        console = Console(width=width, record=True, force_terminal=True)
+        console.print(preview.render(slop, 10, 0, "\u280b", compact=width < 100, frame_idx=0))
+        assert len(console.export_text().splitlines()) <= limit
+
+    first = Console(width=120, record=True, force_terminal=True)
+    first.print(preview.render(slop, 10, 0, "\u280b", compact=False, frame_idx=0))
+    second = Console(width=120, record=True, force_terminal=True)
+    second.print(preview.render(slop, 10, 0, "\u2819", compact=False, frame_idx=1))
+    assert first.export_text() != second.export_text()
+
+
 def test_deck_height_fits_terminal_budget():
     from rich.console import Console
 

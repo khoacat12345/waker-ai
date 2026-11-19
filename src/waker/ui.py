@@ -949,7 +949,7 @@ def build_cyber_deck(
         else _DECK_RED
         if view.state.status == "FAILED" or any(task.status == "failed" for task in view.tasks)
         else _DECK_ORANGE
-        if view.state.diagnosis == "SLOP" or view.errors or view.warnings
+        if view.state.diagnosis == "SLOP" or view.errors or view.warnings or view.anti_slop
         else _DECK_BORDER
     )
     beam_active = (

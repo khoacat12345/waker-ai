@@ -93,9 +93,26 @@ def phase_at(now: float) -> Phase:
 def status_color(status: str):
     if status == "DONE":
         return GREEN
-    if status == "SLOP":
+    if status in ("FAILED", "ERROR"):
         return RED
-    return YELLOW
+    if status == "BLOCKED":
+        return YELLOW
+    if status == "SLOP":
+        return ORANGE
+    return BLUE
+
+
+def border_and_beam(phase: Phase) -> tuple[str, bool]:
+    """Keep preview colors in lockstep with the production Cyber-Deck."""
+    if phase.status == "DONE":
+        return GREEN, False
+    if phase.status in ("FAILED", "ERROR"):
+        return RED, False
+    if phase.status == "BLOCKED":
+        return YELLOW, False
+    if phase.status == "SLOP" or phase.errors or phase.warnings:
+        return ORANGE, True
+    return BORDER, True
 
 
 def quality_bar(score: int, width: int = 10) -> Text:
@@ -112,19 +129,20 @@ def quality_bar(score: int, width: int = 10) -> Text:
     return bar
 
 
-def header(phase: Phase, elapsed: float, compact: bool = False) -> Panel:
+def header(phase: Phase, elapsed: float, compact: bool = False) -> Panel | Text:
     line = Text()
-    line.append("WAKER SUPERVISOR", style=f"bold {TEXT}")
+    line.append("✦ WAKER SUPERVISOR", style=f"bold {TEXT}")
     line.append("  v2.2", style=MUTED)
     line.append(f"   run {RUN_ID}", style=MUTED)
     line.append(f"   ⏱ {fmt_time(elapsed)}", style=CYAN)
     line.append(f"   Agent: {AGENT}", style=MUTED)
     if compact:
         line = Text()
-        line.append("WAKER SUPERVISOR", style=f"bold {TEXT}")
+        line.append("✦ WAKER SUPERVISOR", style=f"bold {TEXT}")
         line.append(f"  v2.2  ·  run {RUN_ID}\n", style=MUTED)
         line.append(f"⏱ {fmt_time(elapsed)}", style=CYAN)
         line.append(f"  ·  Agent: {AGENT}", style=MUTED)
+        return line
     return Panel(line, box=box.ROUNDED, border_style=BORDER, padding=(0, 1))
 
 
@@ -169,11 +187,11 @@ def telemetry_panel(phase: Phase, elapsed: float, cost: float) -> Panel:
     quality.append_text(bar)
     quality.append(f"  {phase.score}/100 ", style=f"bold {status_color(phase.status)}")
     quality.append(f"[{phase.grade}]", style=MUTED)
-    status = phase.status if phase.status == "DONE" else "RUNNING"
+    status = phase.status if phase.status in ("DONE", "SLOP", "FAILED", "BLOCKED") else "RUNNING"
     table.add_row(Text("CLEANLINESS", style=MUTED), quality)
     table.add_row(
         Text("KICKS", style=MUTED),
-        Text(f"{phase.kick}/5", style=RED if phase.status == "SLOP" else GREEN),
+        Text(f"{phase.kick}/5", style=ORANGE if phase.status == "SLOP" else GREEN),
     )
     table.add_row(
         Text("TEST SUITE", style=MUTED),
@@ -201,7 +219,7 @@ def telemetry_panel(phase: Phase, elapsed: float, cost: float) -> Panel:
     )
 
 
-def event_panel(phase: Phase, elapsed: float) -> Panel:
+def event_panel(phase: Phase, elapsed: float, frame: str = "⠋") -> Panel:
     lines = Text()
     count = max(1, min(len(EVENTS), phase.kick + 1))
     selected = EVENTS[max(0, count - 2):count]
@@ -213,7 +231,7 @@ def event_panel(phase: Phase, elapsed: float) -> Panel:
         lines.append(f"{label:<4}", style=f"bold {color}")
         lines.append(f"  {message}", style=TEXT)
     if phase.status != "DONE":
-        lines.append("\n⠋  ", style=CYAN)
+        lines.append(f"\n{frame}  ", style=CYAN)
         lines.append("Evaluating next AST boundary…", style=MUTED)
     return Panel(
         lines,
@@ -250,19 +268,14 @@ def render(
     body = Group(
         header(phase, elapsed, compact=compact),
         main,
-        event_panel(phase, elapsed),
+        event_panel(phase, elapsed, frame),
         footer,
     )
-    border_style = (
-        GREEN
-        if phase.status == "DONE"
-        else BORDER
-    )
-    is_running = phase.status != "DONE"
+    border_style, beam_active = border_and_beam(phase)
     return BeamPanel(
         body,
         border_style=border_style,
-        beam=is_running,
+        beam=beam_active,
         frame=frame_idx,
     )
 
