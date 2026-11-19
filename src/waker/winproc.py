@@ -53,3 +53,13 @@ def popen(*args, **kwargs):  # type: ignore[no-untyped-def]
     """``subprocess.Popen`` with the console window suppressed."""
     kwargs["creationflags"] = int(kwargs.get("creationflags") or 0) | NO_WINDOW
     return subprocess.Popen(*args, **kwargs)
+
+
+def popen_visible(*args, **kwargs):  # type: ignore[no-untyped-def]
+    """``subprocess.Popen`` without forcing a hidden console window.
+
+    Used by the opt-in ``--window`` feature, which deliberately asks Windows
+    to open a separate terminal for the Cyber-Deck.
+    """
+    kwargs.pop("creationflags", None)
+    return subprocess.Popen(*args, **kwargs)

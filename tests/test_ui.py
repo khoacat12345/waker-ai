@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from waker.models import Task
 from waker.state import RunState
-from waker.ui import WakerViewModel, build_cyber_deck, progress_bar, render_markdown
+from waker.ui import (
+    WakerViewModel,
+    build_cyber_deck,
+    fx_enabled,
+    mini_line,
+    open_watch_window,
+    progress_bar,
+    render_markdown,
+)
 
 
 def make_state(done: int) -> RunState:
@@ -129,6 +137,9 @@ def test_viewmodel_and_cyber_deck():
     assert "76/100" in text
     assert "[q] Quit" in text
 
+    console.print(build_cyber_deck(view, compact=False, frame=0, fx=False))
+    assert "\x1b" not in console.export_text()
+
 
 def test_cyber_deck_empty_state_is_safe():
     state = make_state(done=0)
@@ -142,3 +153,61 @@ def test_cyber_deck_empty_state_is_safe():
     console.print(build_cyber_deck(view, compact=True, frame=0))
     text = console.export_text()
     assert "No tasks in contract" in text
+
+
+def test_mini_line_is_plain_and_contains_quality():
+    state = make_state(done=1)
+    state.status = "DONE"
+    state.diagnosis = "DONE"
+    state.kicks = 2
+    ledger = {
+        "tasks": {"T1": {"status": "done", "evidence": {"files": ["src/a.py"], "gate": "pass"}}},
+        "quality": {"score": 76, "grade": "C", "errors": 0, "warnings": 8},
+    }
+    view = WakerViewModel.from_state(state, ledger)
+    line = mini_line(view)
+    assert line.startswith("waker 7f3a")
+    assert "C 76/100" in line
+    assert "2/5 kicks" in line
+    assert "0 err" in line
+    assert "8 warn" in line
+    assert "\x1b" not in line
+
+
+def test_fx_can_be_disabled_and_honors_no_color(monkeypatch):
+    assert fx_enabled(True) is False
+    assert fx_enabled(False) is True
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert fx_enabled(False) is False
+    monkeypatch.delenv("NO_COLOR")
+    monkeypatch.setenv("SSH_CONNECTION", "127.0.0.1")
+    assert fx_enabled(False) is False
+
+
+def test_open_watch_window_is_idempotent(tmp_path, monkeypatch):
+    from waker import ui
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(ui.sys, "platform", "win32")
+    monkeypatch.setattr(
+        ui.winproc,
+        "popen_visible",
+        lambda command, **kwargs: calls.append(command),
+    )
+    assert open_watch_window(tmp_path, "run1") is True
+    assert calls
+    assert "watch" in calls[0]
+    assert "--run" in calls[0]
+    assert open_watch_window(tmp_path, "run1") is False
+    assert len(calls) == 1
+
+
+def test_watch_cli_flags_parse():
+    from waker.cli import build_parser
+
+    args = build_parser().parse_args(
+        ["watch", "--repo", ".", "--run", "abc", "--no-fx", "--mini", "--window"]
+    )
+    assert args.no_fx is True
+    assert args.mini is True
+    assert args.window is True

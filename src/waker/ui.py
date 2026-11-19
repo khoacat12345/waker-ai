@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -53,6 +55,89 @@ def _grade_for_score(score: int) -> str:
 def _short(value: str, limit: int) -> str:
     value = " ".join(value.split())
     return value if len(value) <= limit else value[: limit - 1] + "…"
+
+
+def fx_enabled(no_fx: bool = False) -> bool:
+    """FX are opt-out and automatically disabled on hostile terminals."""
+    if no_fx:
+        return False
+    if "NO_COLOR" in os.environ:
+        return False
+    if any(os.environ.get(name) for name in ("SSH_CLIENT", "SSH_CONNECTION", "SSH_TTY")):
+        return False
+    return True
+
+
+def mini_line(view: WakerViewModel) -> str:
+    """One-line plain-text fallback for pipes, SSH and chatboxes."""
+    status = view.state.status.upper()
+    if view.state.diagnosis and view.state.diagnosis not in {"DONE", status}:
+        status = f"{status}/{view.state.diagnosis}"
+    return (
+        f"waker {view.state.run_id} · {view.grade} {view.score}/100 · "
+        f"{view.state.kicks}/{view.state.max_kicks} kicks · "
+        f"{view.errors} err · {view.warnings} warn · {status}"
+    )
+
+
+def open_watch_window(
+    repo: str | Path,
+    run_id: str | None = None,
+    *,
+    no_fx: bool = False,
+) -> bool:
+    """Open the Cyber-Deck in a separate Windows terminal, once per run.
+
+    The marker is intentionally conservative: a second invocation for the same
+    run is refused while the marker is fresh. It prevents the chatbox from
+    spawning a window every time the user asks for progress.
+    """
+    if sys.platform != "win32":
+        return False
+    root = Path(repo).resolve()
+    resolved = run_id
+    if resolved is None:
+        from .state import latest_run
+
+        resolved = latest_run(root)
+    if not resolved:
+        return False
+    paths = RunPaths(root, resolved)
+    marker = paths.root / "watch.window"
+    if marker.exists():
+        try:
+            if time.time() - marker.stat().st_mtime < 3600:
+                return False
+            marker.unlink()
+        except OSError:
+            return False
+    paths.root.mkdir(parents=True, exist_ok=True)
+    marker.write_text(str(int(time.time())), encoding="utf-8")
+    command = [
+        "cmd.exe",
+        "/c",
+        "start",
+        "Waker Cyber-Deck",
+        sys.executable,
+        "-m",
+        "waker",
+        "watch",
+        "--repo",
+        str(root),
+        "--run",
+        str(resolved),
+    ]
+    if no_fx:
+        command.append("--no-fx")
+    try:
+        winproc.popen_visible(command, cwd=str(root))
+    except OSError:
+        try:
+            marker.unlink()
+        except OSError:
+            pass
+        return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -560,14 +645,17 @@ def build_rich(state: RunState, ledger: dict[str, Any]):
     return Panel(body, title=f"waker \u00b7 run {state.run_id}", border_style="cyan")
 
 
-def _deck_bar(score: int, width: int = 10) -> Any:
+def _deck_bar(score: int, width: int = 10, *, frame: int = 0, fx: bool = True) -> Any:
     from rich.text import Text
 
     filled = int(round(width * max(0, min(100, score)) / 100))
     bar = Text()
     for index in range(width):
         if index < filled:
-            bar.append("▰", style=f"bold {_DECK_BLUE if score >= 70 else _DECK_YELLOW}")
+            style = _DECK_BLUE if score >= 70 else _DECK_YELLOW
+            if fx and filled and index == frame % filled:
+                style = f"bold {_DECK_CYAN}"
+            bar.append("▰", style=style)
         else:
             bar.append("▱", style=_DECK_BORDER)
     return bar
@@ -580,11 +668,78 @@ def _deck_rule_counts(view: WakerViewModel) -> list[tuple[str, int]]:
     return sorted(counts.items(), key=lambda item: (-item[1], item[0]))
 
 
+class BeamPanel:
+    """Rounded panel with an optional animated border beam.
+
+    Rich's Panel applies one style to the whole border. This small renderable
+    keeps the child layout intact while styling a moving window of border
+    cells, so the effect stays terminal-cell based and cheap at 8–10 FPS.
+    """
+
+    def __init__(
+        self,
+        renderable: Any,
+        *,
+        border_style: str = _DECK_BORDER,
+        beam: bool = False,
+        frame: int = 0,
+    ) -> None:
+        self.renderable = renderable
+        self.border_style = border_style
+        self.beam = beam
+        self.frame = frame
+
+    def _border_style(self, position: int, width: int) -> str:
+        if not self.beam:
+            return self.border_style
+        phase = (self.frame * 2) % max(1, width * 2 + 2)
+        distance = min((position - phase) % (width * 2 + 2), (phase - position) % (width * 2 + 2))
+        if distance <= 1:
+            return f"bold {_DECK_CYAN}"
+        if distance <= 3:
+            return _DECK_BLUE
+        return self.border_style
+
+    def __rich_console__(self, console: Any, options: Any):
+        from rich.text import Text
+
+        width = max(20, options.max_width)
+        inner = max(1, width - 2)
+        child_options = options.update(width=inner)
+        lines = console.render_lines(self.renderable, child_options, pad=True)
+        if not lines:
+            lines = [[]]
+        top = Text("╭", style=self._border_style(0, width))
+        for index in range(inner):
+            top.append("─", style=self._border_style(index + 1, width))
+        top.append("╮", style=self._border_style(width - 1, width))
+        yield top
+        for row in lines:
+            left = Text("│", style=self._border_style(0, width))
+            body = Text()
+            for segment in row:
+                text = getattr(segment, "text", "")
+                if not text:
+                    continue
+                body.append(text, style=getattr(segment, "style", None))
+            if body.cell_len < inner:
+                body.append(" " * (inner - body.cell_len))
+            left.append_text(body)
+            left.append("│", style=self._border_style(width - 1, width))
+            yield left
+        bottom = Text("╰", style=self._border_style(0, width))
+        for index in range(inner):
+            bottom.append("─", style=self._border_style(inner - index, width))
+        bottom.append("╯", style=self._border_style(width - 1, width))
+        yield bottom
+
+
 def build_cyber_deck(
     view: WakerViewModel,
     *,
     compact: bool = False,
     frame: int = 0,
+    fx: bool = True,
 ):
     """Render the approved v2.2 two-column Cyber-Deck from a ViewModel."""
     from rich import box
@@ -661,7 +816,7 @@ def build_cyber_deck(
         table.add_column(width=13)
         table.add_column(ratio=1)
         quality = Text()
-        quality.append_text(_deck_bar(view.score))
+        quality.append_text(_deck_bar(view.score, frame=frame, fx=fx))
         quality.append(f"  {view.score}/100 [{view.grade}]", style=f"bold {_DECK_GREEN if view.score >= 90 else (_DECK_YELLOW if view.score >= 70 else _DECK_RED)}")
         table.add_row(Text("CLEANLINESS", style=_DECK_MUTED), quality)
         table.add_row(Text("KICKS", style=_DECK_MUTED), Text(f"{view.state.kicks}/{view.state.max_kicks}", style=_DECK_RED if view.state.diagnosis == "SLOP" else _DECK_GREEN))
@@ -702,6 +857,9 @@ def build_cyber_deck(
         if view.fail_log:
             lines.append("\nFAIL LOG  ", style=f"bold {_DECK_RED}")
             lines.append(" · ".join(view.fail_log[:3]), style=_DECK_TEXT)
+        if fx and view.state.status == "running" and view.events:
+            spark = ("✦ * · .", "✧ · * .", "· ✦ . *")[frame % 3]
+            lines.append(f"\n{spark}", style=_DECK_ORANGE)
         return Panel(
             lines,
             title="[bold]⚡ REALTIME EVENT STREAM[/]",
@@ -729,6 +887,7 @@ def build_cyber_deck(
     footer.append("[p] Pause  ", style=_DECK_MUTED)
     footer.append("[v] Diff  ", style=_DECK_MUTED)
     footer.append("[l] Full Log", style=_DECK_MUTED)
+    title = Text("✨ WAKER CYBER-DECK", style=f"bold {_DECK_CYAN}")
     main = Table.grid(expand=True, padding=(0, 1))
     if compact:
         main.add_column(ratio=1)
@@ -740,6 +899,7 @@ def build_cyber_deck(
         main.add_column(ratio=2)
         main.add_row(task_panel(), telemetry_panel())
     body = Group(
+        title,
         Panel(Group(header, goal), box=box.ROUNDED, border_style=_DECK_BORDER, padding=(0, 1)),
         Text(""),
         main,
@@ -748,13 +908,18 @@ def build_cyber_deck(
         Text(""),
         footer,
     )
-    return Panel(
+    border_style = (
+        _DECK_GREEN
+        if view.state.status == "DONE"
+        else _DECK_RED
+        if view.state.diagnosis == "SLOP" or any(task.status == "failed" for task in view.tasks)
+        else _DECK_BORDER
+    )
+    return BeamPanel(
         body,
-        title=f"[bold]✨ WAKER CYBER-DECK[/]  [dim]{view.total} task(s)[/]",
-        title_align="left",
-        border_style=_DECK_BORDER,
-        box=box.ROUNDED,
-        padding=(0, 1),
+        border_style=border_style,
+        beam=fx and view.state.status == "running",
+        frame=frame,
     )
 
 
@@ -770,18 +935,29 @@ def load_latest(repo: str | Path) -> tuple[RunState, dict[str, Any], RunPaths]:
     return state, ledger, paths
 
 
-def watch(repo: str | Path, run_id: str | None = None, interval: float = 1.0) -> None:
+def watch(
+    repo: str | Path,
+    run_id: str | None = None,
+    interval: float = 1.0,
+    *,
+    no_fx: bool = False,
+    mini: bool = False,
+) -> None:
     from rich.console import Console
     from rich.live import Live
 
     paths = RunPaths(repo, run_id) if run_id else load_latest(repo)[2]
+    view = WakerViewModel.from_paths(paths)
+    if mini or not sys.stdout.isatty():
+        print(mini_line(view))
+        return
     console = Console()
     compact = console.width < 100
-    view = WakerViewModel.from_paths(paths)
+    fx = fx_enabled(no_fx)
     last_poll = 0.0
     frame = 0
     with Live(
-        build_cyber_deck(view, compact=compact, frame=frame),
+        build_cyber_deck(view, compact=compact, frame=frame, fx=fx),
         console=console,
         refresh_per_second=10,
         transient=False,
@@ -795,7 +971,7 @@ def watch(repo: str | Path, run_id: str | None = None, interval: float = 1.0) ->
                 last_poll = now
             frame += 1
             live.update(
-                build_cyber_deck(view, compact=compact, frame=frame),
+                build_cyber_deck(view, compact=compact, frame=frame, fx=fx),
                 refresh=True,
             )
             if view.state.status != "running":

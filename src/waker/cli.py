@@ -348,8 +348,21 @@ def cmd_status(args) -> int:
 
 
 def cmd_watch(args) -> int:
+    if args.window:
+        from .ui import open_watch_window
+
+        if open_watch_window(args.repo, args.run, no_fx=args.no_fx):
+            print("Waker Cyber-Deck opened in a separate terminal.")
+            return 0
+        print("could not open a separate window; falling back to this terminal.", file=sys.stderr)
     try:
-        watch_run(args.repo, args.run, interval=args.interval)
+        watch_run(
+            args.repo,
+            args.run,
+            interval=args.interval,
+            no_fx=args.no_fx,
+            mini=args.mini,
+        )
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -778,6 +791,9 @@ def build_parser() -> argparse.ArgumentParser:
     watch.add_argument("--repo", default=".")
     watch.add_argument("--run")
     watch.add_argument("--interval", type=float, default=1.0)
+    watch.add_argument("--no-fx", action="store_true", help="disable cinema effects")
+    watch.add_argument("--mini", action="store_true", help="print one plain status line and exit")
+    watch.add_argument("--window", action="store_true", help="open the Cyber-Deck in a separate terminal (Windows)")
     watch.set_defaults(func=cmd_watch)
 
     report = sub.add_parser("report", help="in report.md")
