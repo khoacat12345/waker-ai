@@ -695,17 +695,17 @@ class BeamPanel:
             return self.border_style
         dist = min((p - phase) % P, (phase - p) % P)
         if dist == 0:
-            return "bold #ffffff on #7dcfff"  # Lightning spark head!
-        if dist <= 1:
+            return "bold white on #00ffff"  # Super bright neon lightning head
+        if dist <= 2:
             return "bold #ffffff"  # Blinding white core
-        if dist <= 3:
+        if dist <= 5:
             return "bold #00ffff"  # Electric neon cyan
-        if dist <= 6:
-            return "bold #7dcfff"  # Glowing cyan
-        if dist <= 10:
+        if dist <= 9:
+            return "bold #7dcfff"  # Glowing Tokyo cyan
+        if dist <= 14:
             return "#7aa2f7"  # Electric blue aura
-        if dist <= 15:
-            return "#3d59a1"  # Deep blue fading comet tail
+        if dist <= 20:
+            return "#3d59a1"  # Fading comet tail
         return self.border_style
 
     def __rich_console__(self, console: Any, options: Any):
@@ -861,7 +861,7 @@ def build_cyber_deck(
         else:
             rule_text.append("clean", style=_DECK_GREEN)
         return Panel(
-            Group(table, Text(""), Text("ANTI-SLOP SHIELD", style=f"bold {_DECK_MUTED}"), rule_text),
+            Group(table, Text("ANTI-SLOP SHIELD", style=f"bold {_DECK_MUTED}"), rule_text),
             title="[bold]WATCHDOG TELEMETRY[/]",
             title_align="left",
             border_style=_DECK_BORDER,
@@ -872,7 +872,8 @@ def build_cyber_deck(
     def event_panel() -> Panel:
         lines = Text()
         if view.events:
-            for event in view.events[-4:]:
+            limit = 2 if compact else 4
+            for event in view.events[-limit:]:
                 color = _DECK_GREEN if event.label == "DONE" else _DECK_RED
                 lines.append(f"{event.timestamp}  ", style=_DECK_MUTED)
                 lines.append(f"{event.label:<5}", style=f"bold {color}")
@@ -917,7 +918,6 @@ def build_cyber_deck(
     if compact:
         main.add_column(ratio=1)
         main.add_row(task_panel())
-        main.add_row(Text(""))
         main.add_row(telemetry_panel())
     else:
         main.add_column(ratio=3)
@@ -926,11 +926,8 @@ def build_cyber_deck(
     body = Group(
         title,
         Panel(Group(header, goal), box=box.ROUNDED, border_style=_DECK_BORDER, padding=(0, 1)),
-        Text(""),
         main,
-        Text(""),
         event_panel(),
-        Text(""),
         footer,
     )
     if view.state.status == "DONE":
@@ -989,6 +986,8 @@ def watch(
         console=console,
         refresh_per_second=10,
         transient=False,
+        screen=True,
+        vertical_overflow="ellipsis",
     ) as live:
         while True:
             if not paths.state.exists():

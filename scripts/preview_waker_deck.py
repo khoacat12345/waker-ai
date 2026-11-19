@@ -187,12 +187,12 @@ def telemetry_panel(phase: Phase, elapsed: float, cost: float) -> Panel:
         Text("STATUS", style=MUTED),
         Text(status, style=f"bold {status_color(phase.status)}"),
     )
-    shield = Text()
-    shield.append("ANTI-SLOP SHIELD\n", style=f"bold {MUTED}")
-    shield.append("├─ TYPE006 (isinstance)  ×7\n", style=YELLOW)
-    shield.append("╰─ TYPE012 (type switch)  ×1", style=YELLOW)
+    table.add_row(
+        Text("ANTI-SLOP", style=MUTED),
+        Text("TYPE006 ×7 · TYPE012 ×1", style=YELLOW),
+    )
     return Panel(
-        Group(table, Text(""), shield),
+        table,
         title="[bold]WATCHDOG TELEMETRY[/]",
         title_align="left",
         border_style=BORDER,
@@ -204,7 +204,7 @@ def telemetry_panel(phase: Phase, elapsed: float, cost: float) -> Panel:
 def event_panel(phase: Phase, elapsed: float) -> Panel:
     lines = Text()
     count = max(1, min(len(EVENTS), phase.kick + 1))
-    for timestamp, label, message in EVENTS[:count]:
+    for timestamp, label, message in EVENTS[max(0, count - 2):count]:
         color = GREEN if label == "DONE" else RED
         lines.append(f"{timestamp}  ", style=MUTED)
         lines.append(f"{label:<4}", style=f"bold {color}")
@@ -274,39 +274,57 @@ def run_once(width: int | None) -> None:
     console.print(render(phase, FINAL_SECONDS, FINAL_COST, "✓", compact=console.width < 100, frame_idx=0))
 
 
-def run_live(speed: float, width: int | None) -> None:
+def run_live(
+    speed: float,
+    width: int | None,
+    loop: bool = True,
+    infinite: bool = False,
+) -> None:
     console = Console(width=width)
     console.clear()
     compact = console.width < 100
-    started = time.monotonic()
     frame_idx = 0
-    with Live(
-        render(PHASES[0], 0, 0, SPINNER[0], compact=compact, frame_idx=0),
-        console=console,
-        refresh_per_second=10,
-        transient=False,
-    ) as live:
+    try:
         while True:
-            now = (time.monotonic() - started) * speed
-            phase = phase_at(now)
-            if now >= 12.5:
+            started = time.monotonic()
+            with Live(
+                render(PHASES[0], 0, 0, SPINNER[0], compact=compact, frame_idx=0),
+                console=console,
+                refresh_per_second=10,
+                transient=False,
+            ) as live:
+                while True:
+                    now = (time.monotonic() - started) * speed
+                    if infinite:
+                        phase = PHASES[1]
+                        elapsed = (time.monotonic() - started) * speed
+                        cost = min(FINAL_COST, 0.001 + (elapsed / 30.0) * 0.005)
+                    else:
+                        phase = phase_at(now)
+                        if now >= 12.5:
+                            break
+                        elapsed = min(FINAL_SECONDS, now / 12.5 * FINAL_SECONDS)
+                        progress = min(1.0, now / 12.5)
+                        cost = min(FINAL_COST, FINAL_COST * progress)
+
+                    frame = SPINNER[int(time.monotonic() * 10) % len(SPINNER)]
+                    frame_idx += 1
+                    live.update(
+                        render(phase, elapsed, cost, frame, compact=compact, frame_idx=frame_idx),
+                        refresh=True,
+                    )
+                    time.sleep(0.08)
+
+                # Show DONE state
+                live.update(
+                    render(PHASES[-1], FINAL_SECONDS, FINAL_COST, "✓", compact=compact, frame_idx=frame_idx),
+                    refresh=True,
+                )
+                time.sleep(2.5)
+            if not loop or infinite:
                 break
-            elapsed = min(FINAL_SECONDS, now / 12.5 * FINAL_SECONDS)
-            # Small, visible cost ticks; the jumps at phase changes are intentional.
-            progress = min(1.0, now / 12.5)
-            cost = min(FINAL_COST, FINAL_COST * progress)
-            frame = SPINNER[int(time.monotonic() * 10) % len(SPINNER)]
-            frame_idx += 1
-            live.update(
-                render(phase, elapsed, cost, frame, compact=compact, frame_idx=frame_idx),
-                refresh=True,
-            )
-            time.sleep(0.08)
-        live.update(
-            render(PHASES[-1], FINAL_SECONDS, FINAL_COST, "✓", compact=compact, frame_idx=frame_idx),
-            refresh=True,
-        )
-        time.sleep(0.8)
+    except KeyboardInterrupt:
+        pass
 
 
 def main() -> None:
@@ -321,12 +339,18 @@ def main() -> None:
         default=120,
         help="preview width in columns (default 120; use 80 for compact fallback)",
     )
+    parser.add_argument("--no-loop", action="store_true", help="do not loop the replay")
+    parser.add_argument(
+        "--infinite",
+        action="store_true",
+        help="keep running continuously in RUNNING state to observe Border Beam glow",
+    )
     args = parser.parse_args()
     width = args.width if args.width > 0 else None
     if args.once:
         run_once(width)
     else:
-        run_live(max(0.1, args.speed), width)
+        run_live(max(0.1, args.speed), width, loop=not args.no_loop, infinite=args.infinite)
 
 
 if __name__ == "__main__":
