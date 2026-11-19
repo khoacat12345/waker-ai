@@ -15,6 +15,8 @@
 > mutation/coverage adapters, API/async/coupling rules, and multi-repo.
 > **Planned v2.2:** Grill-Me contract questions and compact real-time
 > CLI/TUI checklist (see §26).
+> **Approved next:** conditional Grill-Me + phase selection/timeout profiles
+> (see §27).
 >
 > Anti-Slop phase checklist:
 >
@@ -1556,3 +1558,367 @@ Các FX:
 - [ ] Record demo 15s từ CLI thật.
 
 **Checkpoint: APPROVED — sẵn sàng triển khai sau khi chốt thứ tự P0–P4.**
+
+---
+
+## 27. Approved — Grill-Me & Timeout Profiles
+
+**Status:** **[x] DESIGN APPROVED — chốt ngày 19/11/2026.**
+Đây là đặc tả chốt cho vòng phát triển tiếp theo; chưa code production.
+
+**Mục tiêu:**
+
+- Giảm contract sai do prompt mơ hồ, nhưng **không làm phiền user ở mọi prompt**.
+- Cho user chọn/chỉnh phase và ngân sách thời gian, kết hợp đề xuất thông minh
+  từ AI với quyền quyết định cuối cùng của con người.
+- Tách rõ 4 loại timeout đang bị gộp: turn, verify, freeze và toàn run.
+- Giữ nguyên nguyên tắc cốt lõi: **AI đề xuất, user freeze contract, Waker
+  kiểm chứng bằng evidence trên đĩa.**
+
+**Release target:**
+
+- **v2.2.0:** Grill-Me instruction-only + phase selection/review + profile +
+  hiển thị budget + tách rõ các loại timeout; chưa hard-stop theo phase.
+- **v2.3.0:** hard enforcement đầy đủ cho phase budget, `resume --extend`
+  nâng cao, dữ liệu lịch sử để gợi ý budget, và `waker grill`/`questions.yaml`
+  nếu instruction vẫn chưa đủ.
+- Không đưa AI vào watchdog để tự đổi contract giữa run.
+
+### 27.1 Grill-Me — chỉ bật khi prompt mơ hồ
+
+Grill-Me là **conditional gate**, không phải bước bắt buộc. Mặc định phải là:
+
+> **Prompt đủ rõ → silent-pass, 0 câu hỏi, đi thẳng vào `waker plan`.**
+
+Chỉ bật khi user yêu cầu lập kế hoạch/chạy một task **và** thiếu một trong các
+thông tin blocking:
+
+1. **Goal** — không xác định được kết quả cuối cùng.
+2. **Scope** — không biết file/module/thư mục nào được sửa.
+3. **Verify** — không có lệnh test hoặc acceptance chứng minh hoàn thành.
+4. **Input bắt buộc** — thiếu credential, môi trường, dữ liệu hoặc quyền deploy
+   mà nếu thiếu thì không thể bắt đầu.
+
+Không bật Grill-Me khi:
+
+- User chỉ hỏi kiến thức, giải thích, review code, debug hoặc đọc trạng thái.
+- Task nhỏ và rõ: sửa typo, đổi màu, thêm một nút đã có đủ scope/verify.
+- Prompt đã đủ goal + scope + verify + acceptance.
+- Chỉ thiếu preference thẩm mỹ hoặc lựa chọn kỹ thuật nhỏ mà agent có thể tự
+  quyết định an toàn.
+- Đang có run Waker hoạt động; chỉ báo trạng thái, không hỏi lại.
+
+Quy tắc hỏi:
+
+- Tối đa **3 câu**, một lượt duy nhất.
+- Chỉ hỏi câu blocking; không hỏi preference.
+- Không tự trả lời, không tự bịa scope/verify.
+- Nếu user trả lời “tùy bạn” cho phần không thể verify: ghi thành `preference`,
+  không biến thành task.
+- Nếu sau 3 câu vẫn mơ hồ: dừng và đề nghị user chia nhỏ task.
+- Nếu chỉ thiếu preference: tự chọn mặc định, ghi rõ giả định, không hỏi.
+
+Format gợi ý:
+
+```text
+Grill-Me — cần chốt 2 điểm trước khi freeze contract:
+
+1. Scope: auth sửa trong src/auth/** hay cả src/api/**?
+2. Verify: dùng pytest tests/auth -q hay cần thêm case login sai trả 401?
+
+Trả lời xong mình mới tạo tasks.yaml.
+```
+
+#### 27.1.1 Nơi ghi instruction
+
+- **Bắt buộc:** thêm mục Grill-Me vào
+  `.opencode/skills/waker/SKILL.md`, trước bước `waker plan`.
+- **Tuỳ chọn:** thêm một rule ngắn vào `AGENTS.md` của repo nếu muốn áp dụng
+  cả chat thường, không chỉ khi gọi `/waker`.
+- **Không mặc định** sửa `C:\Users\tuank\AGENTS.md` cho mọi project, vì sẽ làm
+  agent hỏi quá nhiều ở việc đơn giản. Chỉ làm nếu user chủ động yêu cầu.
+- Instruction-only là **soft gate**. Muốn chặn thật phải làm
+  `questions.yaml` + `waker grill` + `waker lint --questions` (mục 27.9).
+
+### 27.2 Chọn phase: AI draft + human freeze
+
+Phase là nhóm công việc để điều phối và tính budget, **không thay thế task**.
+Đơn vị kiểm chứng vẫn là task: mỗi task có `scope` và `verify` riêng.
+
+Ba chế độ:
+
+| Mode | Khi dùng | Hành vi |
+|---|---|---|
+| `--phases none` | Task nhỏ, một mạch | Một phase ngầm định `P1`, không hỏi thêm |
+| `--phases manual` | User đã biết cách chia | User tự viết `phases` và gán `phase` cho task |
+| `--phases auto` | Dự án vừa/lớn, nhiều mảng | Rule/AI đề xuất, user duyệt trước khi freeze |
+
+`auto` không có nghĩa là AI tự chạy. Luôn là:
+
+```text
+AI/rules đề xuất phase
+  -> in bảng phase + task + budget
+  -> user chọn Enter / sửa / manual / đổi profile
+  -> freeze contract
+  -> Waker chạy
+```
+
+Nguồn đề xuất theo thứ tự ưu tiên:
+
+1. `phase` đã có trong prompt (`Phase 1: ...`, `Phase 2: ...`).
+2. Nhóm theo module/scope và dependency của task.
+3. Rule-based: số task, độ rộng scope, test command, verify timeout.
+4. AI/OpenCode chỉ khi user chọn `--via opencode`; output phải đúng schema,
+   không được tự bịa scope/verify.
+5. Lịch sử run (v2.3): thời gian thực tế theo phase/task để gợi ý budget,
+   không dùng lời hứa của LLM.
+
+Giới hạn MVP:
+
+- Tối đa **6 phase**, không nested phase.
+- Mỗi task thuộc đúng một phase.
+- Không có phase rỗng.
+- Không cho AI đổi phase giữa run.
+- Không tự động chuyển task sang phase khác khi một phase timeout.
+
+### 27.3 Contract schema đề xuất
+
+```yaml
+profile: large
+
+phases:
+  - id: P1
+    name: Foundation
+    budget: 45m
+  - id: P2
+    name: Core features
+    budget: 2h
+  - id: P3
+    name: Integration + UI
+    budget: 45m
+  - id: P4
+    name: Verify and polish
+    budget: 30m
+
+tasks:
+  - id: T1
+    phase: P1
+    scope: ["src/core/**", "tests/core/**"]
+    verify: "pytest tests/core -q"
+    verify_timeout: 10m
+  - id: T2
+    phase: P2
+    scope: ["src/features/**", "tests/features/**"]
+    verify: "pytest tests/features -q"
+```
+
+Quy ước:
+
+- `budget` chấp nhận `30s`, `15m`, `2h`; lưu nội bộ bằng giây.
+- `verify_timeout` là tuỳ chọn theo task; mặc định lấy từ profile.
+- `profile` chọn bộ timeout mặc định; user được override từng phase/task.
+- `phases` là một phần của contract đã freeze; sửa sau khi start là `TAMPER`.
+- Task cũ không có `phases` tương thích ngược: toàn bộ nằm trong `P1` ngầm định.
+- Tổng budget các phase + reserve mặc định 15% phải ≤ `max_wall_clock`.
+- Nếu phase không có budget riêng, chia theo profile và số task; user vẫn phải
+  xác nhận trước khi freeze.
+
+### 27.4 Timeout profiles
+
+Giữ nguyên hành vi hiện tại làm mặc định `medium`; thêm profile cho việc lớn:
+
+| Profile | `turn_timeout` | `max_wall_clock` | `verify_timeout` | `freeze_after` | `max_kicks` |
+|---|---:|---:|---:|---:|---:|
+| `small` | 5m | 20m | 2m | 3m | 3 |
+| `medium` | 15m | 90m | 5m | 5m | 5 |
+| `large` | 30m | 5h | 15m | 10m | 8 |
+| `overnight` | 45m | 8h | 30m | 15m | 12 |
+
+Quy tắc:
+
+- `medium` phải giữ đúng default hiện tại để không phá backward compatibility.
+- `large`/`overnight` không được mở vô hạn; vẫn giữ cost guard và stall detector.
+- `turn_timeout` là giới hạn một lượt agent; `max_wall_clock` là toàn run.
+- `verify_timeout` áp dụng cho một lệnh test; timeout test không được tự động
+  coi là code sai nếu chưa có evidence khác.
+- `freeze_after` phải đủ dài cho build/test im lặng; nếu không, dùng
+  `--no-freeze-probe` có kiểm soát và ghi event.
+- User có thể override bằng flag hiện có; mọi override phải được ghi vào
+  `run.json` và hiển thị trong UI/report.
+
+### 27.5 Phase budget enforcement
+
+Đây là thiết kế đích cho v2.3.0. v2.2.0 chỉ hiển thị phase/budget và cảnh báo
+mềm; chưa được tự ý hard-stop giữa run nếu chưa bật tính năng.
+
+Trạng thái phase được lưu trong `run.json`/events, không chỉ hiển thị:
+
+```text
+phase_started      P2, budget 2h
+budget_warning     P2, remaining 12m
+phase_completed    P2, elapsed 1h48m
+phase_timeout      P2, remaining tasks T5, T6
+budget_extended    P2, +30m, approved_by user
+```
+
+Hành vi:
+
+- Khi vào phase: ghi `phase_started`; inject phase hiện tại + remaining budget
+  vào wake prompt.
+- Ở **80% phase budget**: ghi `budget_warning`; nhắc agent ưu tiên task blocking,
+  không mở scope mới.
+- Ở **100% phase budget**: dừng ở ranh giới turn với diagnosis `TIMEOUT`,
+  không gộp chung vào `BREAKER`; báo rõ phase nào, task nào còn thiếu.
+- `turn_timeout` vẫn có thể kill giữa turn; phase budget chỉ chặn ở turn
+  boundary để tránh cắt ngang file write.
+- Không tự skip phase hoặc tự chuyển task sang phase sau.
+- `waker resume <run> --extend 30m` được tăng budget phase hiện tại và
+  `max_wall_clock` tương ứng, ghi `budget_extended`; không reset evidence.
+- Nếu hết `max_kicks` hoặc cost guard trước phase budget, giữ nguyên
+  `BREAKER`/lý do tương ứng; không báo nhầm là timeout.
+
+Thứ tự ưu tiên khi hết ngân sách:
+
+```text
+TAMPER / VAULT_TAMPER
+  > BLOCKED / FROZEN
+  > DONE
+  > phase TIMEOUT
+  > max_kicks / max_cost BREAKER
+  > PARTIAL
+```
+
+### 27.6 UI và CLI
+
+CLI surface đề xuất:
+
+```bash
+waker plan --prompt "..." --repo . --phases auto
+waker plan --prompt "..." --repo . --phases manual
+waker plan --prompt "..." --repo . --phases none
+waker plan --prompt "..." --repo . --via opencode --phases auto
+waker start --tasks .waker/tasks.yaml --profile large
+waker status --repo . --budget
+waker resume <run_id> --extend 30m
+```
+
+Màn hình review phase (chatbox/terminal):
+
+```text
+Phase plan đề xuất:
+  P1  Foundation        T1–T3     45m
+  P2  Core features     T4–T9     2h
+  P3  Verification      T10–T12   45m
+
+Profile: large  ·  tổng 4h / cap 5h
+[Enter] Chấp nhận   [e] Sửa   [p] Đổi profile   [m] Manual   [q] Hủy
+```
+
+- `Enter`: chỉ freeze khi validation sạch.
+- `e`: sửa phase/task/budget; có thể mở `$EDITOR`.
+- `p`: đổi profile, tính lại budget nhưng vẫn phải xác nhận.
+- `m`: in template manual; không tự điền scope/verify.
+- `--yes`: chỉ dùng khi phase plan hợp lệ, không còn câu hỏi blocking;
+  phải ghi `approved_by: --yes` vào event.
+- Nếu AI/rules không đề xuất được: fallback `manual`, không fail open.
+
+UI Cyber-Deck:
+
+- Thêm dòng phase trong telemetry hoặc header:
+  ```text
+  PHASE 2/4  Core features   01:12:20 / 02:00:00  [########---]
+  ```
+- Màu: xanh khi còn nhiều budget, vàng từ 80%, đỏ từ 95%.
+- Event stream hiển thị `budget_warning`, `phase_timeout`, `budget_extended`.
+- Compact 80 cột gộp phase + budget thành một dòng; không làm tràn footer.
+- Plan review dùng dữ liệu thật từ contract, không hiển thị budget giả.
+
+### 27.7 Thứ tự triển khai
+
+1. **Grill-Me instruction-only** trong `SKILL.md`; test thủ công các prompt
+   rõ/mơ hồ. Không sửa core.
+2. **Contract schema + validation**: `phases`, `profile`, `verify_timeout`;
+   backward compatibility với task cũ.
+3. **Plan selection/review**: `--phases none|manual|auto`, bảng review,
+   `--yes` an toàn; AI/rules chỉ đề xuất.
+4. **Engine phase tracking**: phase elapsed, soft warning, hard timeout,
+   `TIMEOUT` diagnosis, `resume --extend`.
+5. **UI tích hợp**: phase budget row, warning colors, event stream, compact.
+6. **Tests + docs + release**: unit/integration/snapshot; cập nhật README,
+   skill, CHANGELOG.
+
+Không được gộp bước 1 vào core code; instruction-only phải ship trước để kiểm
+tra hành vi thực tế của chatbox.
+
+### 27.8 Acceptance tests
+
+Grill-Me:
+
+- Prompt đủ scope/verify → **0 câu hỏi**, đi thẳng.
+- Prompt “sửa bug login” → hỏi tối đa 3 câu blocking.
+- Prompt lớn mơ hồ → hỏi 3 câu; nếu vẫn mơ hồ thì yêu cầu chia nhỏ.
+- User trả lời “tùy bạn” → ghi preference, không bịa task/scope.
+- Không tự trả lời câu hỏi; không gọi `waker plan` khi còn câu hỏi blocking.
+
+Phase selection:
+
+- `none` tạo đúng một phase ngầm định.
+- `manual` giữ nguyên phase user nhập.
+- `auto` chỉ đề xuất; user chưa duyệt thì chưa freeze/chạy.
+- Task không có phase được gán phase mặc định; phase rỗng bị reject.
+- Tổng budget vượt `max_wall_clock` bị reject, không tự cắt.
+- Sửa `tasks.yaml` sau freeze → `TAMPER`.
+
+Timeout:
+
+- `small` timeout đúng `turn_timeout`; `large` không bị giới hạn 15m.
+- Phase đạt 80% sinh `budget_warning`, không kill giữa turn.
+- Phase đạt 100% dừng với `TIMEOUT`, report còn task.
+- `resume --extend` tăng budget và chạy tiếp, không reset evidence.
+- `verify_timeout` được ghi riêng; test timeout không bị báo là code fail.
+- `freeze_after` không kill oan build/test im lặng ở profile lớn.
+- `max_kicks`/cost guard vẫn thắng nếu hết trước phase budget.
+
+UI:
+
+- 120 cột hiển thị phase + budget rõ; 80 cột không tràn footer.
+- `NO_COLOR`/SSH/non-TTY fallback vẫn đọc được phase, budget, timeout reason.
+- `waker status --budget` khớp `run.json`/events, không dùng số ước lượng
+  như số thật.
+
+### 27.9 Code-enforced Grill-Me (deferred)
+
+Nếu instruction-only vẫn bị bỏ qua, làm theo §26.8:
+
+- Chuẩn hoá `Question` + `questions.yaml`.
+- `waker grill --prompt`, `waker lint --questions`.
+- `waker run` fail closed nếu còn câu hỏi blocking.
+- Không auto-answer, không tự sinh scope từ prompt.
+- `--yes` không được dùng để bỏ qua câu hỏi blocking.
+
+Đây là **v2.3.0**, không chặn v2.2.0.
+
+### 27.10 Non-goals
+
+- Không Grill-Me mọi prompt.
+- Không để AI tự chọn phase/budget rồi chạy không cần user duyệt.
+- Không đổi phase, task hoặc budget giữa run mà không có event/approval.
+- Không dùng LLM trong watchdog để tự hiểu prompt gốc.
+- Không mở timeout vô hạn; vẫn phải có cost guard và stall detection.
+- Không biến phase thành đơn vị verify; verify vẫn là task.
+- Không thêm nested phase hoặc phase tree trong MVP.
+- Không hiển thị budget ước lượng như thể là số liệu thật.
+
+### 27.11 Release gate
+
+- [ ] Grill-Me instruction trong `SKILL.md`.
+- [ ] Schema phase/profile + validation.
+- [ ] Review phase auto/manual + `--yes` an toàn.
+- [ ] Engine phase budget + `TIMEOUT` + `resume --extend`.
+- [ ] UI phase row + compact fallback.
+- [ ] Acceptance tests xanh; full pytest 100%.
+- [ ] README, CHANGELOG, skill docs cập nhật.
+- [ ] Demo: prompt mơ hồ → Grill-Me; prompt rõ → 0 câu hỏi.
+- [ ] Demo: phase budget warning → timeout → extend → chạy tiếp.
+
+**Checkpoint: APPROVED — chốt thiết kế; triển khai cùng release UI Cyber-Deck v2.2.0.**
