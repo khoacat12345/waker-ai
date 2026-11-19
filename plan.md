@@ -1796,21 +1796,56 @@ CLI surface đề xuất:
 waker plan --prompt "..." --repo . --phases auto
 waker plan --prompt "..." --repo . --phases manual
 waker plan --prompt "..." --repo . --phases none
+waker plan --prompt "..." --repo . --phases auto --json
 waker plan --prompt "..." --repo . --via opencode --phases auto
 waker start --tasks .waker/tasks.yaml --profile large
 waker status --repo . --budget
 waker resume <run_id> --extend 30m
 ```
 
-Màn hình review phase (chatbox/terminal):
+#### Chatbox-first (surface chính)
+
+User thường ở trong chatbox, không phải terminal tương tác. Vì vậy surface
+chính là hội thoại; phím TTY chỉ là fallback.
+
+Agent gọi `waker plan --json` rồi trả lời:
 
 ```text
-Phase plan đề xuất:
-  P1  Foundation        T1–T3     45m
-  P2  Core features     T4–T9     2h
-  P3  Verification      T10–T12   45m
+Mình đề xuất 3 phase (profile overnight, cap 8h):
 
-Profile: large  ·  tổng 4h / cap 5h
+P1  Auth & JWT       T1–T3   45m
+P2  Stripe Payment   T4–T7   2h
+P3  E2E & Security   T8–T9   30m
+
+Gõ "ok" hoặc "1" để chạy; hoặc nói muốn sửa, ví dụ:
+"tăng P2 lên 3h, P1 còn 30m".
+```
+
+- Task lớn: **không start** cho đến khi user trả lời rõ ràng `ok` / `1` / `chạy`.
+- User sửa bằng ngôn ngữ tự nhiên: agent map yêu cầu → sửa `tasks.yaml` →
+  chạy lại lint → in diff ngắn → xác nhận → mới được start.
+- Không cần parser ngôn ngữ tự nhiên trong core; agent là lớp hội thoại,
+  contract + lint là lớp kiểm chứng.
+- Non-TTY/chatbox: in plan/JSON rồi exit; tuyệt đối không chờ phím.
+- `--yes`: chỉ dùng khi phase plan hợp lệ, không còn câu hỏi blocking;
+  phải ghi `approved_by: --yes` vào event.
+- Nếu AI/rules không đề xuất được: fallback `manual`, không fail open.
+
+#### Small-task fast path
+
+Chỉ khi user đã gọi `/waker`, prompt rõ goal + scope + verify, tối đa 2 task,
+1 phase, không có câu hỏi blocking:
+
+- Agent được tự chạy ngầm ngay, không hỏi phase.
+- Vẫn phải tạo contract, lint sạch, và ghi `approved_by: /waker-fast-path`.
+- Nếu thiếu scope/verify hoặc có >2 task → quay lại review/Grill-Me.
+- Không áp dụng fast path cho dự án lớn hoặc prompt mơ hồ.
+
+#### Terminal TTY fallback
+
+Khi chạy `waker plan` trực tiếp trong terminal, vẫn có thể dùng:
+
+```text
 [Enter] Chấp nhận   [e] Sửa   [p] Đổi profile   [m] Manual   [q] Hủy
 ```
 
@@ -1818,9 +1853,6 @@ Profile: large  ·  tổng 4h / cap 5h
 - `e`: sửa phase/task/budget; có thể mở `$EDITOR`.
 - `p`: đổi profile, tính lại budget nhưng vẫn phải xác nhận.
 - `m`: in template manual; không tự điền scope/verify.
-- `--yes`: chỉ dùng khi phase plan hợp lệ, không còn câu hỏi blocking;
-  phải ghi `approved_by: --yes` vào event.
-- Nếu AI/rules không đề xuất được: fallback `manual`, không fail open.
 
 UI Cyber-Deck:
 
@@ -1868,6 +1900,15 @@ Phase selection:
 - Task không có phase được gán phase mặc định; phase rỗng bị reject.
 - Tổng budget vượt `max_wall_clock` bị reject, không tự cắt.
 - Sửa `tasks.yaml` sau freeze → `TAMPER`.
+
+Chatbox interaction:
+
+- Prompt lớn: agent in phase plan; gõ `ok` mới start.
+- User gõ “tăng P2 lên 3h”: agent sửa YAML, lint lại, xác nhận đúng budget.
+- Prompt nhỏ rõ + `/waker`: fast path chạy không hỏi phase.
+- Prompt nhỏ nhưng thiếu scope/verify: không fast path; hỏi Grill-Me.
+- Non-TTY/chatbox: không chờ phím, không treo subshell.
+- Sửa phase bằng lời không được làm mất scope/verify của task.
 
 Timeout:
 
@@ -1920,5 +1961,7 @@ Nếu instruction-only vẫn bị bỏ qua, làm theo §26.8:
 - [ ] README, CHANGELOG, skill docs cập nhật.
 - [ ] Demo: prompt mơ hồ → Grill-Me; prompt rõ → 0 câu hỏi.
 - [ ] Demo: phase budget warning → timeout → extend → chạy tiếp.
+
+**Execution plan:** [`docs/GRILL_ME_TIMEOUT_EXECUTION_PLAN.md`](docs/GRILL_ME_TIMEOUT_EXECUTION_PLAN.md)
 
 **Checkpoint: APPROVED — chốt thiết kế; triển khai cùng release UI Cyber-Deck v2.2.0.**
