@@ -23,7 +23,7 @@ from typing import Any
 import yaml
 
 from . import globs
-from .budget import DEFAULT_PROFILE, validate_phase_budget
+from .budget import DEFAULT_PROFILE, resolve_profile, validate_phase_budget
 from .models import PhaseSpec, PlanBundle, Question, Task
 
 BULLET_RE = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)])\s+")
@@ -395,6 +395,120 @@ def _bundle_from_raw(raw: Any) -> PlanBundle:
         profile=profile,
         phases=phases,
     )
+
+
+def _phase_hint(task: Task) -> str:
+    if task.phase:
+        return str(task.phase)
+    for pattern in task.scope:
+        parts = [
+            part
+            for part in pattern.replace("\\", "/").strip().split("/")
+            if part and part not in ("*", "**")
+        ]
+        if not parts:
+            continue
+        if parts[0].lower() in {"src", "tests", "test", "docs", "app", "lib"} and len(parts) > 1:
+            return parts[1]
+        return parts[0]
+    return "P1"
+
+
+def _phase_name(hint: str, index: int) -> str:
+    cleaned = re.sub(r"[_-]+", " ", hint).strip()
+    if not cleaned or cleaned.lower() in {"p1", "1"}:
+        return f"Phase {index}"
+    return cleaned.title()
+
+
+def _format_budget(seconds: int) -> str:
+    if seconds > 0 and seconds % 3600 == 0:
+        return f"{seconds // 3600}h"
+    if seconds > 0 and seconds % 60 == 0:
+        return f"{seconds // 60}m"
+    return f"{seconds}s"
+
+
+def propose_phases(
+    bundle: PlanBundle,
+    profile: str = DEFAULT_PROFILE,
+) -> PlanBundle:
+    """Build deterministic phase proposals from task phases/scopes.
+
+    This is the rule-based ``--phases auto`` path. It never invents scope or
+    verify; it only groups existing tasks and allocates a fraction of the
+    profile's wall-clock budget to each group.
+    """
+    tasks = bundle.all_tasks()
+    if not tasks:
+        return bundle
+
+    hints = [_phase_hint(task) for task in tasks]
+    groups: dict[str, list[Task]] = {}
+    for task, hint in zip(tasks, hints):
+        groups.setdefault(hint, []).append(task)
+
+    ordered = list(groups)
+    if len(ordered) > 6:
+        kept = ordered[:5]
+        for hint in ordered[5:]:
+            groups.setdefault("other", []).extend(groups.pop(hint))
+        ordered = [*kept, "other"]
+
+    resolved = resolve_profile(profile)
+    available = max(0, int(resolved.max_wall_clock * (1 - 0.15)))
+    total = len(tasks)
+    phase_by_hint = {hint: f"P{index}" for index, hint in enumerate(ordered, 1)}
+    phases: list[PhaseSpec] = []
+    for index, hint in enumerate(ordered, 1):
+        count = len(groups[hint])
+        budget = int(available * count / total) if total else 0
+        phases.append(
+            PhaseSpec(
+                id=phase_by_hint[hint],
+                name=_phase_name(hint, index),
+                budget=_format_budget(budget),
+            )
+        )
+
+    for task, hint in zip(tasks, hints):
+        target = "other" if hint not in phase_by_hint else hint
+        task.phase = phase_by_hint.get(target, "P1")
+
+    bundle.profile = resolved.name
+    bundle.phases = phases
+    return bundle
+
+
+def apply_phase_mode(
+    bundle: PlanBundle,
+    mode: str,
+    profile: str | None = None,
+) -> PlanBundle:
+    """Apply ``--phases none|manual|auto`` to a freshly parsed bundle."""
+    if mode not in {"none", "manual", "auto"}:
+        raise ValueError(f"unknown phase mode: {mode}")
+
+    if mode == "auto":
+        if bundle.phases:
+            if profile:
+                bundle.profile = profile
+            _assign_default_phase(bundle.all_tasks())
+            return bundle
+        return propose_phases(bundle, profile or bundle.profile or DEFAULT_PROFILE)
+
+    if mode == "none":
+        bundle.phases = []
+        for task in bundle.all_tasks():
+            task.phase = "P1"
+        if profile:
+            bundle.profile = profile
+        return bundle
+
+    if profile:
+        bundle.profile = profile
+    _assign_default_phase(bundle.all_tasks())
+    return bundle
 
 
 def render_yaml(bundle: PlanBundle) -> str:

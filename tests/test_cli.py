@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from conftest import exists_cmd, fake_agent
@@ -27,6 +28,78 @@ def test_plan_writes_contract(tmp_path: Path, repo: Path, capsys):
     assert "T1" in text
     assert "pytest tests/auth -q" in text
     capsys.readouterr()
+
+
+def test_plan_phases_auto_json(tmp_path: Path, repo: Path, capsys):
+    out = tmp_path / "tasks.yaml"
+    code = main(
+        [
+            "plan",
+            "--prompt",
+            "Phase 1: auth, scope: src/auth/**, verify: pytest tests/auth -q\n"
+            "Phase 2: pay, scope: src/pay/**, verify: pytest tests/pay -q",
+            "--phases",
+            "auto",
+            "--profile",
+            "small",
+            "--json",
+            "--out",
+            str(out),
+            "--repo",
+            str(repo),
+        ]
+    )
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["profile"] == "small"
+    assert [phase["id"] for phase in payload["phases"]] == ["P1", "P2"]
+    assert [task["phase"] for task in payload["tasks"]] == ["P1", "P2"]
+    assert all(phase["budget"].endswith("s") or phase["budget"].endswith("m") for phase in payload["phases"])
+
+
+def test_plan_small_fast_path_uses_none(tmp_path: Path, repo: Path, capsys):
+    out = tmp_path / "tasks.yaml"
+    code = main(
+        [
+            "plan",
+            "--prompt",
+            "Thêm nút Logout, scope: src/ui/**, verify: pytest tests/ui -q",
+            "--phases",
+            "none",
+            "--json",
+            "--out",
+            str(out),
+            "--repo",
+            str(repo),
+        ]
+    )
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert "phases" not in payload
+    assert payload["tasks"][0]["phase"] == "P1"
+
+
+def test_plan_phases_manual_keeps_supplied_phase_fields(tmp_path: Path, repo: Path, capsys):
+    out = tmp_path / "tasks.yaml"
+    code = main(
+        [
+            "plan",
+            "--prompt",
+            "Phase 1: auth, scope: src/auth/**, verify: pytest tests/auth -q\n"
+            "Phase 2: pay, scope: src/pay/**, verify: pytest tests/pay -q",
+            "--phases",
+            "manual",
+            "--json",
+            "--out",
+            str(out),
+            "--repo",
+            str(repo),
+        ]
+    )
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert "phases" not in payload
+    assert [task["phase"] for task in payload["tasks"]] == ["1", "2"]
 
 
 def test_lint_returns_two_on_errors(tmp_path: Path, repo: Path, capsys):

@@ -75,7 +75,16 @@ Trả lời xong mình mới tạo tasks.yaml.
 1. Identify the target repo. If the prompt mentions a path that is not in the
    current repo, ask the user for the target repo before planning. Do not guess.
 2. Take the user's prompt **verbatim** (drop a leading `@waker` if present).
-3. `waker plan --prompt "<verbatim>" --out .waker/tasks.yaml --repo <target repo>`
+3. Choose the phase mode before planning:
+   - small, clear task (≤2 tasks, one phase): `--phases none`
+   - user supplied explicit phases: `--phases manual`
+   - large/multi-module task: `--phases auto --profile <profile>`
+     (`small|medium|large|overnight`)
+   - use `--json` when you need to read the plan programmatically.
+   ```bash
+   waker plan --prompt "<verbatim>" --out .waker/tasks.yaml --repo <repo> \
+     [--phases none|manual|auto] [--profile large] [--json]
+   ```
 4. Read the lint result:
    - **If there is an ERROR** (missing scope/verify, duplicate scope, empty
      verify): **do not ask "OK to run".** Show the errors and offer exactly two
@@ -84,9 +93,14 @@ Trả lời xong mình mới tạo tasks.yaml.
         so a model fills scope/verify, then lint again;
      b) the user merges/fixes tasks manually.
    - Continue only when lint has **0 errors**.
-5. When lint is clean: print `.waker/tasks.yaml` + any warnings, then ask
-   exactly one question: `OK to run? (ok / edit)`.
-6. When the user agrees, start the run:
+5. When lint is clean, branch by task size:
+   - **Small fast path:** prompt is clear, `/waker` was explicit, and the plan
+     has ≤2 tasks in one phase. Print a one-line summary, then start immediately
+     with `--phases none`; do not ask an extra phase question.
+   - **Large review path:** print the phase table and any warnings, then ask
+     exactly one question: `Chạy luôn? (ok / sửa)`. Wait for `ok`, `1`, or
+     `chạy`; do not start before that.
+6. When the user agrees (or the small fast path applies), start the run:
 
 ```bash
 waker start --detach --repo . --tasks .waker/tasks.yaml \
@@ -96,6 +110,33 @@ waker start --detach --repo . --tasks .waker/tasks.yaml \
 
 7. Answer immediately: "Running in the background. You can ask me for progress
    in chat, or run `waker watch --repo .` for the live view."
+
+## Chatbox phase review
+
+This section applies when running inside a chatbox, not a raw terminal.
+
+- **Never use raw terminal key prompts** such as `[Enter]`, `[e]`, or reading
+  individual keys. They can block the chatbox. Use normal conversational text.
+- For a large task, after `waker plan --phases auto` show:
+  ```text
+  Mình đề xuất 3 phase (profile large, cap 5h):
+  P1  Auth & JWT      T1–T3   45m
+  P2  Stripe Payment  T4–T7   2h
+  P3  E2E & Security  T8–T9   30m
+  Chạy luôn? (ok / sửa)
+  ```
+- Accept exactly `ok`, `1`, or `chạy` as approval. Anything else is feedback,
+  not approval.
+- If the user edits in natural language (for example “tăng P2 lên 3h, P1 còn
+  30m”):
+  1. Update the matching phase objects in `.waker/tasks.yaml`.
+  2. Run `waker lint --tasks .waker/tasks.yaml --repo <repo>`.
+  3. Show a short confirmation of the new budgets and lint result.
+  4. Ask the same approval question again. Do not start until the user approves.
+- Do not change `scope`, `verify`, or task ownership while editing budgets.
+  If a requested edit is ambiguous, ask one blocking question.
+- Non-TTY/chatbox mode must never wait for a keypress; it may print the plan
+  and exit with instructions instead.
 
 ## Cyber-Deck (`/waker`)
 
@@ -136,6 +177,8 @@ When the user says "blind grading", "hidden test", or "Kaggle mode":
 ## Hard rules
 
 - If lint has an ERROR, **do not start** and **do not ask "OK to run"**.
+- In chatbox mode, never use raw key reads or `[Enter]/[e]` prompts.
+- No explicit `ok` / `1` / `chạy` means no large-run start.
 - Do not edit `tasks.yaml` after starting (the hash will report TAMPER).
 - Do not edit test files. To change tests, stop the run, edit, and restart.
 - Do not say "done" — only read `status`/`report`.

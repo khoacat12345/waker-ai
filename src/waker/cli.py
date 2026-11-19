@@ -13,6 +13,7 @@ from pathlib import Path
 
 from . import __version__, planner, update
 from . import doctor as doctor_module
+from .budget import PROFILE_NAMES
 from .adapters.claude import ClaudeAdapter
 from .adapters.generic import GenericProcessAdapter
 from .adapters.opencode import OpenCodeAdapter
@@ -92,7 +93,11 @@ def _build_adapter(args):
 
 
 def cmd_plan(args) -> int:
-    bundle = _parse_bundle(args)
+    bundle = planner.apply_phase_mode(
+        _parse_bundle(args),
+        getattr(args, "phases", "none"),
+        getattr(args, "profile", None),
+    )
     if getattr(args, "via", "rules") == "rules":
         work = [task for task in bundle.tasks if task.kind == "work"]
         if len(work) >= 6 and not any(task.scope for task in work):
@@ -754,7 +759,19 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--via", "--planner", dest="via", choices=["rules", "opencode"], default="rules")
     plan.add_argument("--model", default=None)
     plan.add_argument("--binary", default=None)
-    plan.add_argument("--json", action="store_true")
+    plan.add_argument(
+        "--phases",
+        choices=["none", "manual", "auto"],
+        default="none",
+        help="phase selection: none (one implicit P1), manual, or rule-based auto",
+    )
+    plan.add_argument(
+        "--profile",
+        choices=PROFILE_NAMES,
+        default=None,
+        help="timeout profile used for auto phase budgets",
+    )
+    plan.add_argument("--json", action="store_true", help="emit machine-readable plan JSON")
     plan.set_defaults(func=cmd_plan)
 
     lint = sub.add_parser("lint", help="validate the contract (0 tokens)")
