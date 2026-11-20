@@ -2,6 +2,36 @@
 
 All notable changes to `waker-ai`.
 
+## v2.3.0 — 2026-11-20
+
+**Phase budget enforcement with soft warnings and resumable extensions.**
+
+### Added
+
+- **Phase elapsed and status:** `run.json` now records `phase_elapsed`,
+  `phase_status` (`running`, `completed`, `timeout`) and
+  `phase_timeout_reason`.
+- **80% phase warning:** crossing 80% of the active phase budget emits a
+  `budget_warning` event and injects the remaining-budget warning into the next
+  wake prompt. Each phase warns once.
+- **Hard phase stop at turn boundary:** crossing 100% after the turn and its
+  verification emits `phase_timeout`, marks the phase `timeout`, reports the
+  unfinished task IDs, and stops with `Diagnosis.TIMEOUT`. The agent cannot move
+  to the next phase while the current phase is incomplete or timed out.
+- **`waker resume <run_id> --extend 30m`:** extends the timed-out phase budget
+  and `max_wall_clock`, records `budget_extended` with `approved_by=user`, and
+  resumes the next turn without resetting evidence, task status or the contract
+  hash.
+- **Phase timeout UI/report:** the Cyber-Deck shows red `TIMEOUT` and `LEFT`
+  remaining time after an extension; `waker report` and `waker status` include
+  the phase status, passed tasks, pending tasks and timeout reason.
+
+### Verification
+
+- Full pytest suite: **0 failed, 1 skipped** (opt-in real-OpenCode E2E).
+- `python -m build`: `waker_ai-2.3.0.tar.gz` + wheel.
+- `twine check dist/waker_ai-2.3.0*`: both artifacts PASSED.
+
 ## v2.2.0 — 2026-11-20
 
 **Chatbox-first Grill-Me, timeout profiles and phase budget display.**
