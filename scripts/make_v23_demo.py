@@ -124,7 +124,12 @@ def bubble(
     return y + height
 
 
-def chat_frame(stage: int, click: bool = False, copied: bool = False) -> Image.Image:
+def chat_frame(
+    stage: int,
+    click: bool = False,
+    copied: bool = False,
+    select: bool = False,
+) -> Image.Image:
     image = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(image)
     window_chrome(draw, "OpenCode  /  waker", "chatbox -> contract -> supervisor")
@@ -142,14 +147,14 @@ def chat_frame(stage: int, click: bool = False, copied: bool = False) -> Image.I
         )
         y = bubble(draw, 70, y + 18, 640, question, "waker · Grill-Me", ORANGE) + 18
     if stage >= 2:
-        y = bubble(draw, 690, y, 450, "đúng rồi, ok", "you", CYAN) + 18
+        y = bubble(draw, 690, y, 450, "that's right, ok", "you", CYAN) + 18
     if stage == 2:
         plan = (
             "Phase plan · profile overnight (8h)\n"
             "P1  Auth & JWT       45m\n"
             "P2  Stripe Payment   2h\n"
             "P3  E2E & Security   30m\n\n"
-            "Gõ ok / 1 / chạy để bắt đầu."
+            "Type ok / 1 / run to start."
         )
         panel(draw, (70, 430, W - 70, 640), "phase plan · human freeze", CYAN, PANEL_2)
         for index, line in enumerate(plan.splitlines()):
@@ -158,6 +163,8 @@ def chat_frame(stage: int, click: bool = False, copied: bool = False) -> Image.I
         text(draw, (70, 650), "Small task? silent-pass. Large task? phase plan + human freeze.", MUTED, 14)
     if stage >= 3:
         panel(draw, (70, 430, W - 70, 505), "waker is working", GREEN, PANEL_2)
+        if select:
+            draw.rectangle((88, 444, 500, 472), fill=(35, 61, 92), outline=CYAN, width=1)
         text(draw, (90, 447), "waker watch --repo . --run 7f3a", TEXT, 17, True)
         button = (950, 443, 1060, 479)
         draw.rounded_rectangle(button, radius=8, fill=(34, 48, 62), outline=CYAN, width=1)
@@ -224,6 +231,21 @@ def simple_bar(draw: ImageDraw.ImageDraw, x: int, y: int, width: int, pct: float
         draw.rounded_rectangle((x, y, x + filled, y + 10), radius=5, fill=color)
 
 
+def terminal_paste_frame() -> Image.Image:
+    image = Image.new("RGB", (W, H), BG)
+    draw = ImageDraw.Draw(image)
+    window_chrome(draw, "PowerShell  /  waker", "copy -> paste -> run")
+    panel(draw, (44, 90, W - 44, H - 40), "PowerShell", BORDER, PANEL)
+    text(draw, (72, 132), "PS C:\\demo>", GREEN, 18, True)
+    text(draw, (224, 132), "waker watch --repo . --run 7f3a", TEXT, 18)
+    cursor_x = 224 + int(draw.textlength("waker watch --repo . --run 7f3a", font=font(18)))
+    draw.rectangle((cursor_x + 3, 130, cursor_x + 13, 154), fill=CYAN)
+    text(draw, (72, 190), "pasting command...", MUTED, 16)
+    text(draw, (72, 222), "Waker Cyber-Deck is starting.", CYAN, 16, True)
+    text(draw, (72, 600), "The chatbox stays responsive; the daemon owns the run.", MUTED, 15)
+    return image
+
+
 def deck_frame(frame: int, final: bool = False) -> Image.Image:
     image = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(image)
@@ -260,9 +282,8 @@ def deck_frame(frame: int, final: bool = False) -> Image.Image:
         color = GREEN if icon == "[x]" else (YELLOW if icon == "[~]" else MUTED)
         text(draw, (80, y), icon, color, 16, True)
         text(draw, (112, y), name, TEXT, 15)
-        text(draw, (555, y), pct, GREEN if pct == "100%" else YELLOW, 14, True)
-        text(draw, (625, y), grade, MUTED, 13)
-        text(draw, (675, y), warn, YELLOW if "8warn" in warn else MUTED, 12)
+        text(draw, (610, y), pct, GREEN if pct == "100%" else YELLOW, 14, True)
+        text(draw, (685, y), grade, MUTED, 13)
 
     # Telemetry panel.
     panel(draw, (768, 200, W - 62, 362), "WATCHDOG TELEMETRY", BORDER, PANEL)
@@ -339,10 +360,14 @@ def main() -> None:
     for stage, duration in ((0, 1200), (1, 1500), (2, 1800), (3, 1300)):
         frames.append(chat_frame(stage))
         durations.append(duration)
-    frames.append(chat_frame(3, click=True))
-    durations.append(350)
-    frames.append(chat_frame(3, click=True, copied=True))
-    durations.append(900)
+    frames.append(chat_frame(3, select=True))
+    durations.append(320)
+    frames.append(chat_frame(3, select=True, click=True))
+    durations.append(320)
+    frames.append(chat_frame(3, select=True, click=True, copied=True))
+    durations.append(700)
+    frames.append(terminal_paste_frame())
+    durations.append(950)
 
     for index in range(48):
         frames.append(deck_frame(index, final=False))
