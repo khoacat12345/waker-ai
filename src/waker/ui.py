@@ -85,12 +85,13 @@ def open_watch_window(
     run_id: str | None = None,
     *,
     no_fx: bool = False,
+    hold: bool = True,
 ) -> bool:
     """Open the Cyber-Deck in a separate Windows terminal, once per run.
 
-    The marker is intentionally conservative: a second invocation for the same
-    run is refused while the marker is fresh. It prevents the chatbox from
-    spawning a window every time the user asks for progress.
+    The marker stores the launcher PID, not a bare timestamp: a closed window
+    can reopen immediately, while an actual live launcher still blocks
+    duplicate windows.
     """
     if sys.platform != "win32":
         return False
@@ -105,19 +106,26 @@ def open_watch_window(
     paths = RunPaths(root, resolved)
     marker = paths.root / "watch.window"
     if marker.exists():
+        pid = 0
         try:
-            if time.time() - marker.stat().st_mtime < 3600:
-                return False
+            payload = json.loads(marker.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                pid = int(payload.get("pid") or 0)
+        except (OSError, TypeError, ValueError):
+            pid = 0
+        if pid and winproc.pid_alive(pid):
+            return False
+        try:
             marker.unlink()
         except OSError:
             return False
     paths.root.mkdir(parents=True, exist_ok=True)
-    marker.write_text(str(int(time.time())), encoding="utf-8")
     command = [
         "cmd.exe",
         "/c",
         "start",
         "Waker Cyber-Deck",
+        "/wait",
         sys.executable,
         "-m",
         "waker",
@@ -129,13 +137,18 @@ def open_watch_window(
     ]
     if no_fx:
         command.append("--no-fx")
+    if hold:
+        command.append("--hold")
     try:
-        winproc.popen_visible(command, cwd=str(root))
+        process = winproc.popen_visible(command, cwd=str(root))
     except OSError:
-        try:
-            marker.unlink()
-        except OSError:
-            pass
+        return False
+    try:
+        marker.write_text(
+            json.dumps({"pid": int(getattr(process, "pid", 0) or 0), "started": time.time()}),
+            encoding="utf-8",
+        )
+    except OSError:
         return False
     return True
 
@@ -1092,40 +1105,73 @@ def watch(
     *,
     no_fx: bool = False,
     mini: bool = False,
+    hold: bool = False,
 ) -> None:
     from rich.console import Console
     from rich.live import Live
 
     paths = RunPaths(repo, run_id) if run_id else load_latest(repo)[2]
     view = WakerViewModel.from_paths(paths)
-    if mini or not sys.stdout.isatty():
+    stdout_tty = bool(sys.stdout.isatty())
+    if mini or not stdout_tty:
         print(mini_line(view))
         return
+
     console = Console()
     compact = console.width < 100 or console.height < 24
     fx = fx_enabled(no_fx)
+
+    def wait_for_enter() -> None:
+        if not hold or not stdout_tty:
+            return
+        try:
+            input("Press Enter to close...")
+        except (EOFError, KeyboardInterrupt):
+            pass
+
+    def render_static(target: WakerViewModel, frame: int = 0) -> None:
+        # No alternate screen here. This is the path that keeps a completed
+        # deck visible after watch exits.
+        console.print(build_cyber_deck(target, compact=compact, frame=frame, fx=fx))
+
+    # A completed/failed run is not a live view. Print it once in the normal
+    # terminal buffer and return; using Live(screen=True) would erase it.
+    if view.state.status != "running":
+        render_static(view)
+        wait_for_enter()
+        return
+
     last_poll = 0.0
     frame = 0
-    with Live(
-        build_cyber_deck(view, compact=compact, frame=frame, fx=fx),
-        console=console,
-        refresh_per_second=10,
-        transient=False,
-        screen=True,
-        vertical_overflow="ellipsis",
-    ) as live:
-        while True:
-            if not paths.state.exists():
-                break
-            now = time.monotonic()
-            if now - last_poll >= max(0.2, interval):
-                view = WakerViewModel.from_paths(paths)
-                last_poll = now
-            frame += 1
-            live.update(
-                build_cyber_deck(view, compact=compact, frame=frame, fx=fx),
-                refresh=True,
-            )
-            if view.state.status != "running":
-                break
-            time.sleep(0.1)
+    try:
+        with Live(
+            build_cyber_deck(view, compact=compact, frame=frame, fx=fx),
+            console=console,
+            refresh_per_second=10,
+            transient=False,
+            screen=True,
+            vertical_overflow="ellipsis",
+        ) as live:
+            while True:
+                if not paths.state.exists():
+                    break
+                now = time.monotonic()
+                if now - last_poll >= max(0.2, interval):
+                    view = WakerViewModel.from_paths(paths)
+                    last_poll = now
+                frame += 1
+                live.update(
+                    build_cyber_deck(view, compact=compact, frame=frame, fx=fx),
+                    refresh=True,
+                )
+                if view.state.status != "running":
+                    break
+                time.sleep(0.1)
+    except KeyboardInterrupt:
+        pass
+
+    # Live(screen=True) restores/clears the alternate screen on exit. Render
+    # the final frame in the normal buffer so the last state survives.
+    if paths.state.exists():
+        render_static(WakerViewModel.from_paths(paths), frame=frame)
+    wait_for_enter()

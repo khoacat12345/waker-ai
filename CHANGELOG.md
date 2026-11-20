@@ -40,6 +40,17 @@ time budgets that fit the work instead of the old 90-minute ceiling.
 - Large and overnight profiles use 5h and 8h wall clocks respectively instead
   of the old 90-minute default.
 
+### Fixed
+
+- **Completed-run Cyber-Deck:** `waker watch` now renders a completed, failed or
+  blocked run as a static deck in the normal terminal buffer instead of using
+  the alternate screen and erasing it immediately. Live runs still use
+  `Live(screen=True)`.
+- **`waker watch --window` lifecycle:** the child window now receives `--hold`,
+  the launcher uses `start /wait`, and the `watch.window` marker stores
+  `{pid, started}` JSON. A dead/stale PID is cleaned automatically; a live
+  window still blocks duplicate opens.
+
 ### Deferred to v2.3.0
 
 - Hard phase-budget enforcement and automatic phase transitions.
@@ -49,7 +60,7 @@ time budgets that fit the work instead of the old 90-minute ceiling.
 
 ### Verification
 
-- Full pytest suite: **332 collected, 331 passed, 1 skipped**, zero failures.
+- Full pytest suite: **336 collected, 335 passed, 1 skipped**, zero failures.
   The skip is the opt-in real-OpenCode E2E test.
 - `python -m build`: `waker_ai-2.2.0.tar.gz` + wheel.
 - `twine check dist/waker_ai-2.2.0*`: both **PASSED**.

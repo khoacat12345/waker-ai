@@ -91,6 +91,19 @@ PHASE 2/2  Docs  01:12:10 / 02:00:00  [######----]
 - No phase row when the contract has no phase metadata; values are never
   synthesized.
 
+## Fixed
+
+- **Completed-run Cyber-Deck visibility:** a run in `DONE`, `FAILED`,
+  `BLOCKED`, `TIMEOUT` or another terminal state is rendered once with
+  `Console.print` in the normal terminal buffer. `Live(screen=True)` is used
+  only for a genuinely running run. When a live run ends, the final frame is
+  rendered again so it is not erased with the alternate screen.
+- **`--window` lifecycle:** the child command receives `--hold`, uses
+  `cmd start /wait`, and the `watch.window` marker is JSON:
+  `{"pid": 12345, "started": 1760000000.0}`. A dead or legacy marker is removed
+  immediately; a live launcher prevents duplicate windows. The window stays
+  open until Enter, then can be reopened.
+
 ## Backward compatibility
 
 - Existing contracts without `phases` load unchanged and receive implicit
@@ -100,7 +113,7 @@ PHASE 2/2  Docs  01:12:10 / 02:00:00  [######----]
 
 ## Verification
 
-- Full pytest suite: **332 collected, 331 passed, 1 skipped**; zero failures.
+- Full pytest suite: **336 collected, 335 passed, 1 skipped**; zero failures.
   The skip is the real-OpenCode E2E test guarded by `WAKER_LIVE_TEST=1`.
 - `python -m build`: built `waker_ai-2.2.0.tar.gz` and
   `waker_ai-2.2.0-py3-none-any.whl`.

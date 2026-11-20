@@ -189,30 +189,153 @@ def test_fx_can_be_disabled_and_honors_no_color(monkeypatch):
 def test_open_watch_window_is_idempotent(tmp_path, monkeypatch):
     from waker import ui
 
+    class FakeProcess:
+        pid = 4242
+
     calls: list[list[str]] = []
     monkeypatch.setattr(ui.sys, "platform", "win32")
     monkeypatch.setattr(
         ui.winproc,
         "popen_visible",
-        lambda command, **kwargs: calls.append(command),
+        lambda command, **kwargs: calls.append(command) or FakeProcess(),
     )
+    monkeypatch.setattr(ui.winproc, "pid_alive", lambda pid: pid == 4242)
+
     assert open_watch_window(tmp_path, "run1") is True
     assert calls
     assert "watch" in calls[0]
     assert "--run" in calls[0]
+    assert "--hold" in calls[0]
+    assert "/wait" in calls[0]
     assert open_watch_window(tmp_path, "run1") is False
     assert len(calls) == 1
+
+    # Legacy timestamp markers and dead PIDs must not block a new window.
+    marker = tmp_path / ".waker" / "runs" / "run1" / "watch.window"
+    marker.write_text("1795146262", encoding="utf-8")
+    monkeypatch.setattr(ui.winproc, "pid_alive", lambda pid: False)
+    assert open_watch_window(tmp_path, "run1") is True
+    assert len(calls) == 2
+
+    marker.write_text('{"pid": 999, "started": 1}', encoding="utf-8")
+    assert open_watch_window(tmp_path, "run1") is True
+    assert len(calls) == 3
+
+
+def test_watch_done_renders_static_without_live(tmp_path, monkeypatch):
+    import json
+
+    from rich.console import Console
+
+    from waker import ui
+    from waker.state import RunPaths
+
+    paths = RunPaths(tmp_path, "done")
+    paths.root.mkdir(parents=True)
+    state = make_state(done=1)
+    state.repo = str(tmp_path)
+    state.run_id = "done"
+    state.status = "DONE"
+    state.diagnosis = "DONE"
+    state.tasks[0].update({"status": "done"})
+    state.save(paths.state)
+    paths.ledger.write_text(
+        json.dumps(
+            {
+                "tasks": {
+                    "T1": {
+                        "status": "done",
+                        "evidence": {"files": ["src/auth/guard.py"], "gate": "pass"},
+                    }
+                },
+                "quality": {"score": 90, "grade": "A", "errors": 0, "warnings": 0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    import io
+
+    class TTYBuffer(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    console = Console(width=120, record=True, force_terminal=True)
+    monkeypatch.setattr("rich.console.Console", lambda: console)
+    monkeypatch.setattr(
+        "rich.live.Live",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("completed run must not use Live")
+        ),
+    )
+    monkeypatch.setattr(ui.sys, "stdout", TTYBuffer())
+
+    ui.watch(tmp_path, "done", hold=False)
+    text = console.export_text()
+    assert "WAKER CYBER-DECK" in text
+    assert "DONE" in text
+    assert 0 < len(text.splitlines()) <= 22
+
+
+def test_watch_hold_waits_only_on_tty(tmp_path, monkeypatch):
+    import json
+
+    from rich.console import Console
+
+    from waker import ui
+    from waker.state import RunPaths
+
+    paths = RunPaths(tmp_path, "done")
+    paths.root.mkdir(parents=True)
+    state = make_state(done=1)
+    state.repo = str(tmp_path)
+    state.run_id = "done"
+    state.status = "DONE"
+    state.diagnosis = "DONE"
+    state.save(paths.state)
+    paths.ledger.write_text(
+        json.dumps({"tasks": {}, "quality": {"score": 100, "grade": "A"}}),
+        encoding="utf-8",
+    )
+
+    import io
+
+    class TTYBuffer(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    console = Console(width=120, record=True, force_terminal=True)
+    waits: list[str] = []
+    monkeypatch.setattr("rich.console.Console", lambda: console)
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt: waits.append(prompt),
+    )
+    monkeypatch.setattr(ui.sys, "stdout", TTYBuffer())
+    ui.watch(tmp_path, "done", hold=True)
+    assert len(waits) == 1
+    assert "Press Enter" in waits[0]
+
+    class NonTTY(io.StringIO):
+        def isatty(self) -> bool:
+            return False
+
+    waits.clear()
+    monkeypatch.setattr(ui.sys, "stdout", NonTTY())
+    ui.watch(tmp_path, "done", hold=True)
+    assert waits == []
 
 
 def test_watch_cli_flags_parse():
     from waker.cli import build_parser
 
     args = build_parser().parse_args(
-        ["watch", "--repo", ".", "--run", "abc", "--no-fx", "--mini", "--window"]
+        ["watch", "--repo", ".", "--run", "abc", "--no-fx", "--mini", "--window", "--hold"]
     )
     assert args.no_fx is True
     assert args.mini is True
     assert args.window is True
+    assert args.hold is True
 
 
 def test_snake_beam_is_forward_only():

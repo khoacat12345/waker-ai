@@ -30,6 +30,45 @@ def test_plan_writes_contract(tmp_path: Path, repo: Path, capsys):
     capsys.readouterr()
 
 
+def test_watch_cli_accepts_hold():
+    from waker.cli import build_parser
+
+    args = build_parser().parse_args(
+        ["watch", "--repo", ".", "--run", "abc", "--hold", "--mini"]
+    )
+    assert args.hold is True
+    assert args.mini is True
+
+
+def test_watch_mini_returns_one_line(tmp_path: Path, capsys):
+    from waker.state import RunPaths, RunState
+
+    paths = RunPaths(tmp_path, "r1")
+    paths.root.mkdir(parents=True)
+    state = RunState(
+        run_id="r1",
+        repo=str(tmp_path),
+        prompt="",
+        agent_command="true",
+        test_command=None,
+        baseline_commit="",
+        baseline_test_hash="",
+        test_globs=[],
+        started_at="now",
+        tasks=[],
+        session_id="ses_r1",
+        status="DONE",
+        diagnosis="DONE",
+    )
+    state.save(paths.state)
+
+    code = main(["watch", "--repo", str(tmp_path), "--run", "r1", "--mini"])
+    assert code == 0
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+    assert len(lines) == 1
+    assert "waker r1" in lines[0]
+
+
 def test_plan_phases_auto_json(tmp_path: Path, repo: Path, capsys):
     out = tmp_path / "tasks.yaml"
     code = main(
