@@ -1,4 +1,4 @@
-![Waker v2.2 anti-slop terminal demo: kick 0 SLOP, kick 1 SLOP, kick 2 DONE](docs/demo.gif)
+![Waker v2.3 storyboard demo: Grill-Me chatbox, phase budget Cyber-Deck, anti-slop attempt 2, DONE](docs/demo-v23.gif)
 
 # waker-ai
 
@@ -424,9 +424,10 @@ Phase reports: `.waker/runs/phase1_report.md`, `phase2_report.md`, `phase3_repor
 
 ## Status
 
-**v2.2.0 — Chatbox Grill-Me, timeout profiles, phase budget display** — plus
-the default-on deterministic AST anti-slop watchdog, baseline tracking,
-selective rollback, SARIF, and the Rich Cyber-Deck.
+**v2.3.0 — Phase budget enforcement with resumable extensions** — plus
+the default-on deterministic AST anti-slop watchdog, chatbox Grill-Me,
+timeout profiles, baseline tracking, selective rollback, SARIF, and the Rich
+Cyber-Deck.
 
 Maturity:
 
@@ -437,9 +438,8 @@ Maturity:
 - **PTY T3** — Windows only; POSIX support is planned.
 - **Cost guard** — exact for OpenCode, best-effort for Claude, 0 for generic/PTY.
 
-PyPI: v2.2.0 distributions are built and `twine check` validated; publish
-after release approval. The current stable install remains `pip install
-waker-ai` (pin `waker-ai==1.2.0` for pre-anti-slop behavior).
+PyPI: **v2.3.0 is published**; `pip install --upgrade waker-ai` gets the
+phase-budget release. Pin `waker-ai==1.2.0` only for pre-anti-slop behavior.
 
 ## License
 
