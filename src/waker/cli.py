@@ -34,7 +34,7 @@ from .state import (
     run_is_active,
     run_lock_pid,
 )
-from .ui import load_latest, render_markdown, watch as watch_run
+from .ui import load_latest, phase_snapshot, render_markdown, watch as watch_run
 from .vault import Vault
 from .vault_validate import validate_vault
 
@@ -398,6 +398,7 @@ def cmd_status(args) -> int:
                 "verify_timeout": state.verify_timeout,
                 "freeze_after": state.freeze_after,
             },
+            "phase": phase_snapshot(state, ledger),
             "cost_usd": round(state.cost_usd, 6),
             "max_cost_usd": state.max_cost_usd,
             "tasks": ledger.get("tasks", {}),

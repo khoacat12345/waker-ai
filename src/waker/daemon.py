@@ -133,6 +133,8 @@ def _run_status(root: Path, run_id: str | None) -> dict[str, Any]:
         return {"error": f"run {run_id} not found"}
     state = RunState.load(paths.state)
     ledger = read_json(paths.ledger) if paths.ledger.exists() else {"tasks": {}}
+    from .ui import phase_snapshot
+
     return {
         "run_id": state.run_id,
         "status": state.status,
@@ -147,6 +149,7 @@ def _run_status(root: Path, run_id: str | None) -> dict[str, Any]:
             "verify_timeout": state.verify_timeout,
             "freeze_after": state.freeze_after,
         },
+        "phase": phase_snapshot(state, ledger),
         "cost_usd": round(state.cost_usd, 6),
         "max_cost_usd": state.max_cost_usd,
         "tasks": ledger.get("tasks", {}),

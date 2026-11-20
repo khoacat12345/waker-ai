@@ -216,6 +216,9 @@ class WakerViewModel:
     phase_total: int = 0
     phase_elapsed: float = 0.0
     phase_budget: float | None = None
+    phase_status: str = ""
+    phase_remaining: float | None = None
+    phase_timeout_reason: str = ""
 
     @property
     def done(self) -> int:
@@ -390,6 +393,9 @@ class WakerViewModel:
         phase_index = 0
         phase_budget: float | None = None
         phase_elapsed = 0.0
+        phase_status = ""
+        phase_remaining: float | None = None
+        phase_timeout_reason = ""
         if phase_specs:
             records = ledger.get("tasks", {})
             for spec in phase_specs:
@@ -408,6 +414,10 @@ class WakerViewModel:
             )
             phase_name = selected.name or selected.id
             phase_index = phase_specs.index(selected) + 1
+            phase_status = str(getattr(state, "phase_status", "") or "")
+            if not phase_status:
+                phase_status = "running" if state.status == "running" else "completed"
+            phase_timeout_reason = str(getattr(state, "phase_timeout_reason", "") or "")
             try:
                 phase_budget = selected.budget_seconds
             except ValueError:
@@ -426,6 +436,8 @@ class WakerViewModel:
                 and phase_elapsed == 0
             ):
                 phase_elapsed = state.elapsed
+            if phase_budget is not None:
+                phase_remaining = max(0.0, phase_budget - phase_elapsed)
 
         return cls(
             state=state,
@@ -447,6 +459,9 @@ class WakerViewModel:
             phase_total=len(phase_specs),
             phase_elapsed=phase_elapsed,
             phase_budget=phase_budget,
+            phase_status=phase_status,
+            phase_remaining=phase_remaining,
+            phase_timeout_reason=phase_timeout_reason,
         )
 
 
@@ -608,7 +623,65 @@ def fmt_clock(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{sec:02d}"
 
 
-def _phase_color(percent: float) -> str:
+def phase_snapshot(state: RunState, ledger: dict[str, Any]) -> dict[str, Any] | None:
+    """Return current phase truth for report/status/UI consumers."""
+    specs: list[PhaseSpec] = []
+    for item in getattr(state, "phases", []) or []:
+        if isinstance(item, dict):
+            try:
+                specs.append(PhaseSpec.from_dict(item))
+            except (TypeError, ValueError):
+                continue
+    if not specs:
+        return None
+    tasks = state.task_objects()
+    records = ledger.get("tasks", {})
+    phase_id: str | None = None
+    for spec in specs:
+        task_ids = [task.id for task in tasks if task.phase == spec.id]
+        if task_ids and any(
+            records.get(task_id, {}).get("status") != "done"
+            for task_id in task_ids
+        ):
+            phase_id = spec.id
+            break
+    if phase_id is None:
+        phase_id = specs[-1].id
+    selected = next(spec for spec in specs if spec.id == phase_id)
+    budget: float | None
+    try:
+        budget = selected.budget_seconds
+    except ValueError:
+        budget = None
+    elapsed = state.phase_elapsed_for(phase_id)
+    phase_tasks = [task for task in tasks if task.phase == phase_id]
+    passed = [
+        task.id
+        for task in phase_tasks
+        if records.get(task.id, {}).get("status") == "done"
+    ]
+    pending = [task.id for task in phase_tasks if task.id not in passed]
+    status = str(getattr(state, "phase_status", "") or "")
+    if not status:
+        status = "running" if state.status == "running" else "completed"
+    return {
+        "id": phase_id,
+        "name": selected.name or selected.id,
+        "index": specs.index(selected) + 1,
+        "total": len(specs),
+        "status": status,
+        "elapsed": round(elapsed, 3),
+        "budget": round(budget, 3) if budget is not None else None,
+        "remaining": round(max(0.0, budget - elapsed), 3) if budget is not None else None,
+        "passed": passed,
+        "pending": pending,
+        "timeout_reason": str(getattr(state, "phase_timeout_reason", "") or ""),
+    }
+
+
+def _phase_color(percent: float, status: str | None = None) -> str:
+    if status == "timeout":
+        return _DECK_RED
     if percent >= 95:
         return _DECK_RED
     if percent >= 80:
@@ -669,6 +742,24 @@ def render_markdown(state: RunState, ledger: dict[str, Any]) -> str:
     ]
     if ledger.get("quality"):
         lines.append(quality_line(ledger))
+    phase = phase_snapshot(state, ledger)
+    if phase:
+        lines.append("")
+        lines.append(
+            f"**Phase {phase['index']}/{phase['total']} \u00b7 {phase['name']} "
+            f"\u00b7 {phase['status'].upper()}**"
+        )
+        if phase["budget"] is not None:
+            lines.append(
+                f"budget: {fmt_clock(phase['elapsed'])} / {fmt_clock(phase['budget'])} "
+                f"\u00b7 left {fmt_clock(phase['remaining'])}"
+            )
+        lines.append(
+            f"passed: {', '.join(phase['passed']) or 'none'} \u00b7 "
+            f"pending: {', '.join(phase['pending']) or 'none'}"
+        )
+        if phase["timeout_reason"]:
+            lines.append(f"reason: {phase['timeout_reason']}")
     hidden = ledger.get("hidden") or {}
     if hidden:
         summary = "  ".join(
@@ -1012,7 +1103,7 @@ def build_cyber_deck(
         if not view.phase_id or not view.phase_budget:
             return None
         percent = view.phase_percent
-        color = _phase_color(percent)
+        color = _phase_color(percent, view.phase_status)
         filled = int(round(10 * max(0.0, min(100.0, percent)) / 100))
         bar = "#" * filled + "-" * (10 - filled)
         line = Text()
@@ -1026,6 +1117,10 @@ def build_cyber_deck(
             style=_DECK_MUTED,
         )
         line.append(f"[{bar}]", style=f"bold {color}")
+        if view.phase_status == "timeout":
+            line.append("  TIMEOUT", style=f"bold {_DECK_RED}")
+        elif view.phase_remaining is not None:
+            line.append(f"  LEFT {fmt_clock(view.phase_remaining)}", style=_DECK_MUTED)
         return line
 
     header = Text()
@@ -1067,7 +1162,9 @@ def build_cyber_deck(
         else _DECK_YELLOW
         if view.state.status == "BLOCKED"
         else _DECK_RED
-        if view.state.status == "FAILED" or any(task.status == "failed" for task in view.tasks)
+        if view.state.status in {"FAILED", "TIMEOUT"}
+        or view.phase_status == "timeout"
+        or any(task.status == "failed" for task in view.tasks)
         else _DECK_ORANGE
         if view.state.diagnosis == "SLOP" or view.errors or view.warnings or view.anti_slop
         else _DECK_BORDER

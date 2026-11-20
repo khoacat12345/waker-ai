@@ -384,6 +384,12 @@ def test_cli_resume_extend_reopens_phase(repo: Path, capsys):
     assert first.diagnosis.value == "TIMEOUT"
     capsys.readouterr()
 
+    code = main(["status", "--repo", str(repo), "--run", first.run_id, "--format", "json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["phase"]["status"] == "timeout"
+    assert "T2" in payload["phase"]["pending"]
+
     code = main(
         [
             "resume",
