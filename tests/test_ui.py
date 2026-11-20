@@ -462,6 +462,73 @@ def test_phase_colors_use_usage_thresholds():
     assert ui._phase_color(80.0) == ui._DECK_YELLOW
     assert ui._phase_color(94.9) == ui._DECK_YELLOW
     assert ui._phase_color(95.0) == ui._DECK_RED
+    assert ui._phase_color(10.0, "timeout") == ui._DECK_RED
+
+
+def test_phase_timeout_snapshot_is_red_and_report_lists_tasks():
+    from rich.console import Console
+
+    state = make_state(done=1)
+    state.status = "TIMEOUT"
+    state.diagnosis = "TIMEOUT"
+    state.phases = [{"id": "P1", "name": "Core", "budget": "1h"}]
+    state.tasks[0]["phase"] = "P1"
+    state.tasks[1]["phase"] = "P1"
+    state.phase_id = "P1"
+    state.phase_status = "timeout"
+    state.phase_started_ts = None
+    state.phase_elapsed = {"P1": 3600}
+    state.phase_timeout_reason = "phase P1 budget exhausted; unfinished: T2"
+    ledger = {
+        "tasks": {
+            "T1": {"status": "done", "evidence": {"files": ["src/a.py"], "gate": "pass"}},
+            "T2": {"status": "pending", "evidence": None},
+        },
+        "quality": {"score": 76, "grade": "C", "errors": 0, "warnings": 0},
+    }
+
+    view = WakerViewModel.from_state(state, ledger)
+    assert view.phase_status == "timeout"
+    assert view.phase_remaining == 0
+    console = Console(width=120, record=True, force_terminal=True)
+    console.print(build_cyber_deck(view, compact=False, frame=0, fx=True))
+    text = console.export_text()
+    assert "PHASE 1/1" in text
+    assert "TIMEOUT" in text
+
+    report = render_markdown(state, ledger)
+    assert "Phase 1/1" in report
+    assert "TIMEOUT" in report
+    assert "passed: T1" in report
+    assert "pending: T2" in report
+
+
+def test_phase_extended_shows_remaining_time():
+    from rich.console import Console
+
+    state = make_state(done=1)
+    state.status = "running"
+    state.diagnosis = None
+    state.phases = [{"id": "P1", "name": "Core", "budget": "2h"}]
+    state.tasks[0]["phase"] = "P1"
+    state.tasks[1]["phase"] = "P1"
+    state.phase_id = "P1"
+    state.phase_status = "running"
+    state.phase_started_ts = None
+    state.phase_elapsed = {"P1": 1800}
+    ledger = {
+        "tasks": {
+            "T1": {"status": "done", "evidence": {"files": ["src/a.py"], "gate": "pass"}},
+            "T2": {"status": "pending", "evidence": None},
+        },
+        "quality": {"score": 76, "grade": "C", "errors": 0, "warnings": 0},
+    }
+
+    view = WakerViewModel.from_state(state, ledger)
+    assert view.phase_remaining == 5400
+    console = Console(width=120, record=True, force_terminal=True)
+    console.print(build_cyber_deck(view, compact=False, frame=0, fx=True))
+    assert "LEFT 01:30:00" in console.export_text()
 
 
 def test_deck_height_fits_terminal_budget():

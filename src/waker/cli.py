@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import __version__, planner, update
 from . import doctor as doctor_module
-from .budget import PROFILE_NAMES, resolve_profile
+from .budget import PROFILE_NAMES, parse_duration, resolve_profile
 from .adapters.claude import ClaudeAdapter
 from .adapters.generic import GenericProcessAdapter
 from .adapters.opencode import OpenCodeAdapter
@@ -34,7 +34,7 @@ from .state import (
     run_is_active,
     run_lock_pid,
 )
-from .ui import load_latest, render_markdown, watch as watch_run
+from .ui import load_latest, phase_snapshot, render_markdown, watch as watch_run
 from .vault import Vault
 from .vault_validate import validate_vault
 
@@ -254,6 +254,34 @@ def _run_flags(args) -> list[str]:
     return flags
 
 
+def cmd_resume(args) -> int:
+    extend_seconds: float | None = None
+    if args.extend:
+        try:
+            extend_seconds = parse_duration(args.extend)
+        except (TypeError, ValueError) as exc:
+            print(f"invalid --extend duration: {exc}", file=sys.stderr)
+            return 2
+        if extend_seconds <= 0:
+            print("invalid --extend duration: must be > 0", file=sys.stderr)
+            return 2
+    try:
+        engine = Engine.from_run(
+            args.repo,
+            args.run_id,
+            extend_seconds=extend_seconds,
+        )
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    result = engine.run()
+    paths = RunPaths(args.repo, result.run_id)
+    print(render_markdown(RunState.load(paths.state), read_json(paths.ledger)))
+    print(f"\nreport: {result.report_path}")
+    print(f"result: {result.diagnosis.value} (exit {result.exit_code})")
+    return result.exit_code
+
+
 def cmd_start(args) -> int:
     if not args.resume:
         bundle = _load_contract(args)
@@ -370,6 +398,7 @@ def cmd_status(args) -> int:
                 "verify_timeout": state.verify_timeout,
                 "freeze_after": state.freeze_after,
             },
+            "phase": phase_snapshot(state, ledger),
             "cost_usd": round(state.cost_usd, 6),
             "max_cost_usd": state.max_cost_usd,
             "tasks": ledger.get("tasks", {}),
@@ -818,6 +847,12 @@ def build_parser() -> argparse.ArgumentParser:
     _add_run_arguments(start)
     start.add_argument("--detach", action="store_true", help="run detached (default)")
     start.set_defaults(func=cmd_start, detach=True)
+
+    resume = sub.add_parser("resume", help="resume a timed-out run")
+    resume.add_argument("run_id")
+    resume.add_argument("--repo", default=".")
+    resume.add_argument("--extend", default=None, help="extend the timed-out phase budget")
+    resume.set_defaults(func=cmd_resume)
 
     stop = sub.add_parser("stop", help="stop the active run")
     stop.add_argument("--repo", default=".")

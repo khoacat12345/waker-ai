@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from conftest import exists_cmd, fake_agent, py
 
 from waker.engine import Engine, EngineConfig
-from waker.models import Diagnosis, Task
-from waker.state import RunPaths
+from waker.models import Diagnosis, PhaseSpec, Task
+from waker.state import RunPaths, RunState
 
 
 def labels(repo: Path, run_id: str) -> list[str]:
@@ -79,6 +80,111 @@ def test_frozen_agent_is_detected(repo: Path, tasks: list[Task]):
 
     assert result.diagnosis is Diagnosis.BREAKER
     assert "FROZEN" in labels(repo, result.run_id)
+
+
+def test_phase_elapsed_for_includes_active_phase_clock():
+    state = RunState(
+        run_id="phase-time",
+        repo=".",
+        prompt="",
+        agent_command="true",
+        test_command=None,
+        baseline_commit="",
+        baseline_test_hash="",
+        test_globs=[],
+        started_at="now",
+        tasks=[],
+        session_id="ses_phase",
+        phase_id="P1",
+        phase_started_ts=100.0,
+        phase_elapsed={"P1": 5.0, "P2": 7.0},
+    )
+    assert state.phase_elapsed_for("P1", now=110.0) == 15.0
+    assert state.phase_elapsed_for("P2", now=110.0) == 7.0
+
+
+def test_phase_budget_timeout_stops_before_next_phase(repo: Path, tasks: list[Task]):
+    for task in tasks:
+        task.phase = "P1"
+    phases = [
+        PhaseSpec("P1", "Core", "0.001s"),
+        PhaseSpec("P2", "Docs", "1h"),
+    ]
+    result = Engine(
+        config(repo, tasks, "lazy", max_kicks=3, phases=phases)
+    ).run()
+
+    assert result.diagnosis is Diagnosis.TIMEOUT
+    assert result.exit_code == 7
+    assert "TIMEOUT" in labels(repo, result.run_id)
+    state = RunState.load(RunPaths(repo, result.run_id).state)
+    assert state.phase_id == "P1"
+    assert state.phase_status == "timeout"
+    assert "T2" in (state.phase_timeout_reason or "")
+    timeout_event = next(
+        record for record in events(repo, result.run_id) if record.get("t") == "phase_timeout"
+    )
+    assert timeout_event["phase"] == "P1"
+    assert "T2" in timeout_event["unfinished"]
+    assert not any(
+        record.get("t") == "turn_start" and record.get("kick") == 1
+        for record in events(repo, result.run_id)
+    )
+
+
+def test_phase_budget_warning_is_emitted_and_injected(repo: Path, tasks: list[Task]):
+    for task in tasks:
+        task.phase = "P1"
+    phases = [PhaseSpec("P1", "Core", "100s")]
+    engine = Engine(config(repo, tasks, "lazy", max_kicks=2, phases=phases))
+    engine.prepare()
+    assert engine.state is not None
+    engine.state.phase_started_ts = time.time() - 85
+    result = engine.run()
+
+    assert result.diagnosis is Diagnosis.DONE
+    warnings = [
+        record for record in events(repo, result.run_id) if record.get("t") == "budget_warning"
+    ]
+    assert warnings
+    assert warnings[0]["phase"] == "P1"
+    prompt = RunPaths(repo, result.run_id).kick_prompt(1).read_text(encoding="utf-8")
+    assert "PHASE BUDGET WARNING" in prompt
+
+
+def test_resume_extend_reopens_timed_out_phase(repo: Path, tasks: list[Task]):
+    for task in tasks:
+        task.phase = "P1"
+    phases = [
+        PhaseSpec("P1", "Core", "0.001s"),
+        PhaseSpec("P2", "Docs", "1h"),
+    ]
+    first = Engine(config(repo, tasks, "lazy", max_kicks=3, phases=phases)).run()
+    assert first.diagnosis is Diagnosis.TIMEOUT
+    before = RunState.load(RunPaths(repo, first.run_id).state)
+    contract_hash = before.contract_hash
+    old_budget = next(
+        phase.budget_seconds for phase in phases if phase.id == "P1"
+    )
+    old_wall = before.max_wall_clock
+
+    resumed = Engine.from_run(repo, first.run_id, extend_seconds=10)
+    second = resumed.run()
+
+    assert second.diagnosis is Diagnosis.DONE
+    state = RunState.load(RunPaths(repo, first.run_id).state)
+    assert state.phase_status == "completed"
+    assert state.contract_hash == contract_hash
+    assert state.max_wall_clock == old_wall + 10
+    phase = next(item for item in state.phases if item["id"] == "P1")
+    assert phase["budget"] == f"{old_budget + 10:.3f}s"
+    assert state.phase_elapsed["P1"] > old_budget
+    extended = next(
+        record for record in events(repo, first.run_id) if record.get("t") == "budget_extended"
+    )
+    assert extended["phase"] == "P1"
+    assert extended["extend_seconds"] == 10
+    assert extended["approved_by"] == "user"
 
 
 def test_turn_timeout_is_reported_as_timeout(repo: Path, tasks: list[Task]):

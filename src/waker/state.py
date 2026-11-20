@@ -156,6 +156,8 @@ class RunState:
     phase_id: str | None = None
     phase_started_ts: float | None = None
     phase_elapsed: dict[str, float] = field(default_factory=dict)
+    phase_status: str | None = None
+    phase_timeout_reason: str | None = None
     adapter: str = "generic"
     model: str | None = None
     permission_mode: str = "acceptEdits"
@@ -190,6 +192,14 @@ class RunState:
     def elapsed(self) -> float:
         end = self.ended_ts if self.ended_ts is not None else time.time()
         return max(0.0, self.elapsed_offset + end - self.started_ts)
+
+    def phase_elapsed_for(self, phase_id: str, now: float | None = None) -> float:
+        """Elapsed seconds for a phase, including its live clock when active."""
+        elapsed = float(self.phase_elapsed.get(phase_id, 0.0))
+        if self.phase_id == phase_id and self.phase_started_ts is not None:
+            timestamp = time.time() if now is None else now
+            elapsed += max(0.0, timestamp - self.phase_started_ts)
+        return elapsed
 
     def task_objects(self) -> list[Task]:
         return [Task.from_dict(item) for item in self.tasks]

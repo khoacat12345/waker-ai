@@ -349,6 +349,70 @@ def test_cli_detect_json(repo: Path, capsys):
     assert "pytest -q" in out
 
 
+def test_cli_resume_extend_reopens_phase(repo: Path, capsys):
+    from waker.models import PhaseSpec, Task
+    from waker.state import RunPaths, RunState
+
+    tasks = [
+        Task(
+            id="T1",
+            desc="write a",
+            scope=["src/a.txt"],
+            verify=exists_cmd("src/a.txt"),
+            phase="P1",
+        ),
+        Task(
+            id="T2",
+            desc="write b",
+            scope=["src/b.txt"],
+            verify=exists_cmd("src/b.txt"),
+            phase="P1",
+        ),
+    ]
+    config = EngineConfig(
+        repo=str(repo),
+        tasks=tasks,
+        agent_command=fake_agent("lazy"),
+        test_command=exists_cmd("src/a.txt", "src/b.txt"),
+        max_kicks=3,
+        turn_timeout=30,
+        verify_timeout=30,
+        freeze_probe=False,
+        phases=[PhaseSpec("P1", "Core", "0.001s")],
+    )
+    first = Engine(config).run()
+    assert first.diagnosis.value == "TIMEOUT"
+    capsys.readouterr()
+
+    code = main(["status", "--repo", str(repo), "--run", first.run_id, "--format", "json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["phase"]["status"] == "timeout"
+    assert "T2" in payload["phase"]["pending"]
+
+    code = main(
+        [
+            "resume",
+            first.run_id,
+            "--repo",
+            str(repo),
+            "--extend",
+            "10s",
+        ]
+    )
+    assert code == 0
+    state = RunState.load(RunPaths(repo, first.run_id).state)
+    assert state.phase_status == "completed"
+    assert state.diagnosis == "DONE"
+    events = [
+        json.loads(line)
+        for line in RunPaths(repo, first.run_id).events.read_text(encoding="utf-8").splitlines()
+    ]
+    extended = next(event for event in events if event.get("t") == "budget_extended")
+    assert extended["phase"] == "P1"
+    assert extended["approved_by"] == "user"
+
+
 def test_cli_resume_after_breaker(repo: Path, capsys):
     from conftest import exists_cmd, fake_agent
     from waker.models import PlanBundle, Task

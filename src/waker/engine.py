@@ -6,10 +6,12 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from . import detector, evidence, injector, scheduler
 from .adapters.base import Adapter, TurnContext
 from .adapters.generic import GenericProcessAdapter
+from .budget import parse_duration
 from .blind_runner import grade_vault, summarize
 from .vault import Vault
 from .vault_validate import validate_vault
@@ -109,6 +111,47 @@ class EngineConfig:
     slop_baseline: bool = True
 
 
+def _extend_timed_out_phase(state: RunState, seconds: float) -> dict[str, Any]:
+    """Extend the active timed-out phase and the run wall clock in place."""
+    if seconds <= 0:
+        raise ValueError("extend duration must be > 0")
+    if not state.phase_id or state.phase_status != "timeout":
+        raise RuntimeError("run has no timed-out phase to extend")
+    phase_index = next(
+        (index for index, item in enumerate(state.phases) if item.get("id") == state.phase_id),
+        None,
+    )
+    if phase_index is None:
+        raise RuntimeError(f"phase {state.phase_id} not found in run state")
+    item = dict(state.phases[phase_index])
+    raw_budget = item.get("budget")
+    if raw_budget in (None, ""):
+        raise RuntimeError(f"phase {state.phase_id} has no budget to extend")
+    try:
+        old_budget = parse_duration(raw_budget)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"phase {state.phase_id} budget is invalid: {exc}") from exc
+    new_budget = old_budget + seconds
+    item["budget"] = f"{new_budget:.3f}s"
+    state.phases[phase_index] = item
+    old_wall = state.max_wall_clock
+    if state.max_wall_clock and state.max_wall_clock > 0:
+        state.max_wall_clock += seconds
+    state.phase_status = "running"
+    state.phase_timeout_reason = None
+    state.phase_started_ts = time.time()
+    return {
+        "phase": state.phase_id,
+        "extend_seconds": round(seconds, 3),
+        "extend_minutes": round(seconds / 60, 2),
+        "old_budget": round(old_budget, 3),
+        "new_budget": round(new_budget, 3),
+        "old_max_wall_clock": old_wall,
+        "new_max_wall_clock": state.max_wall_clock,
+        "approved_by": "user",
+    }
+
+
 class Engine:
     def __init__(self, config: EngineConfig, adapter: Adapter | None = None) -> None:
         self.config = config
@@ -126,6 +169,7 @@ class Engine:
         self._verify_timeouts: set[str] = set()
         self._test_timed_out: bool = False
         self._test_skipped: bool = False
+        self._phase_warned: set[str] = set()
         self._vault: Vault | None = None
         self._blind_suites: list[str] = []
         self._hidden_results: dict = {}
@@ -193,6 +237,8 @@ class Engine:
             phases=[phase.to_dict() for phase in cfg.phases],
             phase_id=initial_phase,
             phase_started_ts=time.time() if initial_phase else None,
+            phase_status="running" if initial_phase else None,
+            phase_timeout_reason=None,
             adapter=cfg.adapter_name,
             model=cfg.model,
             permission_mode=cfg.permission_mode,
@@ -270,6 +316,7 @@ class Engine:
         run_id: str,
         adapter: Adapter | None = None,
         max_kicks: int | None = None,
+        extend_seconds: float | None = None,
     ) -> "Engine":
         """Attach to an interrupted (or failed) run and continue it."""
         root = Path(repo).resolve()
@@ -283,6 +330,9 @@ class Engine:
             )
         acquire_run_lock(paths, run_id)
 
+        extension = None
+        if extend_seconds is not None:
+            extension = _extend_timed_out_phase(state, extend_seconds)
         tasks = [Task.from_dict(item) for item in state.tasks]
         constraints = [Task.from_dict(item) for item in state.constraints]
         phases = [PhaseSpec.from_dict(item) for item in state.phases]
@@ -315,6 +365,8 @@ class Engine:
         engine.state = state
         engine.paths = paths
         engine.events = EventLog(paths.events)
+        if extension:
+            engine.events.append("budget_extended", **extension)
         engine._setup_vault(validate_missing=False)
         cache_path = paths.root / "verify_cache.json"
         if cache_path.exists():
@@ -483,8 +535,15 @@ class Engine:
                     self.events.append("slop_revert", kick=kick, **outcome)
                 if not abort_slop:
                     diag = self._budget_guard(diag, state)
+                phase_warning = None
+                phase_timed_out = False
+                if not abort_slop and diag not in TERMINAL:
+                    phase_warning, phase_timed_out = self._check_phase_budget(obs)
+                    if phase_timed_out:
+                        diag = Diagnosis.TIMEOUT
                 self._record(kick, obs, diag, turn, prompt_path)
-                self._sync_phase()
+                if not phase_timed_out:
+                    self._sync_phase()
 
                 self.events.append(
                     "diagnose",
@@ -526,6 +585,9 @@ class Engine:
                 state.save(self.paths.state)
 
                 ledger = read_json(self.paths.ledger)
+                notes = self._notes(diag, obs, reverted=self._slop_revert_files)
+                if phase_warning:
+                    notes.append(phase_warning)
                 self._next_prompt = injector.build_wake_prompt(
                     diag,
                     self.config.tasks,
@@ -535,9 +597,7 @@ class Engine:
                     self.config.test_command,
                     state.kicks,
                     state.max_kicks,
-                    notes=self._notes(
-                        diag, obs, reverted=self._slop_revert_files
-                    ),
+                    notes=notes,
                     hidden_failures=self._hidden_failures,
                     hidden_summary=self._hidden_summary,
                 )
@@ -1084,20 +1144,119 @@ class Engine:
                 return phase.id
         return self.config.phases[-1].id
 
+    def _phase_spec(self, phase_id: str) -> PhaseSpec | None:
+        return next((phase for phase in self.config.phases if phase.id == phase_id), None)
+
+    def _phase_unfinished(self, phase_id: str, obs: Observation) -> list[str]:
+        unfinished: list[str] = []
+        for task in self.config.tasks:
+            if task.phase != phase_id:
+                continue
+            result = self._verify_results.get(task.id)
+            done = bool(obs.in_scope_files.get(task.id) and result and result.exit_code == 0)
+            if not done:
+                unfinished.append(task.id)
+        for constraint in self.config.constraints:
+            if constraint.phase != phase_id:
+                continue
+            result = self._constraint_results.get(constraint.id)
+            if not (result and result.exit_code == 0):
+                unfinished.append(constraint.id)
+        return unfinished
+
+    def _check_phase_budget(self, obs: Observation) -> tuple[str | None, bool]:
+        """Check the active phase at a turn boundary.
+
+        Returns ``(warning_note, timed_out)``. The 100% decision is made here
+        only after the turn and its verification have completed, so an active
+        verify command is never killed mid-flight.
+        """
+        state = self.state
+        if state is None or self.paths is None or not state.phase_id:
+            return None, False
+        phase_id = state.phase_id
+        spec = self._phase_spec(phase_id)
+        if spec is None:
+            return None, False
+        try:
+            budget = spec.budget_seconds
+        except ValueError:
+            return None, False
+        if not budget or budget <= 0:
+            return None, False
+        unfinished = self._phase_unfinished(phase_id, obs)
+        if not unfinished:
+            return None, False
+        elapsed = state.phase_elapsed_for(phase_id)
+        percent = elapsed / budget * 100
+
+        if elapsed >= budget:
+            reason = (
+                f"phase {phase_id} budget exhausted: "
+                f"{elapsed:.0f}s / {budget:.0f}s; unfinished: {', '.join(unfinished)}"
+            )
+            state.phase_elapsed[phase_id] = elapsed
+            state.phase_started_ts = None
+            state.phase_status = "timeout"
+            state.phase_timeout_reason = reason
+            state.save(self.paths.state)
+            self.events.append(
+                "phase_timeout",
+                phase=phase_id,
+                elapsed=round(elapsed, 2),
+                budget=round(budget, 2),
+                percent=round(percent, 1),
+                unfinished=unfinished,
+                reason=reason,
+            )
+            return None, True
+
+        if percent >= 80 and phase_id not in self._phase_warned:
+            self._phase_warned.add(phase_id)
+            remaining = max(0.0, budget - elapsed)
+            warning = (
+                f"PHASE BUDGET WARNING: phase {phase_id} has used "
+                f"{elapsed:.0f}s of {budget:.0f}s ({percent:.0f}%); "
+                f"{remaining:.0f}s left. Finish this phase's tasks; "
+                "do not start the next phase."
+            )
+            state.phase_status = "running"
+            state.save(self.paths.state)
+            self.events.append(
+                "budget_warning",
+                phase=phase_id,
+                elapsed=round(elapsed, 2),
+                budget=round(budget, 2),
+                percent=round(percent, 1),
+                remaining=round(remaining, 2),
+                message=warning,
+            )
+            return warning, False
+        return None, False
+
     def _sync_phase(self) -> None:
         state = self.state
         if state is None or self.paths is None:
             return
         current = self._current_phase_id()
         if current == state.phase_id:
+            if current and state.phase_status is None:
+                state.phase_status = "running"
+                state.save(self.paths.state)
             return
         now = time.time()
         if state.phase_id and state.phase_started_ts is not None:
             state.phase_elapsed[state.phase_id] = state.phase_elapsed.get(
                 state.phase_id, 0.0
             ) + max(0.0, now - state.phase_started_ts)
+        if state.phase_id and state.phase_status != "timeout":
+            state.phase_status = "completed"
         state.phase_id = current
         state.phase_started_ts = now if current else None
+        state.phase_status = "running" if current else None
+        state.phase_timeout_reason = None
+        if current:
+            self._phase_warned.discard(current)
         state.save(self.paths.state)
 
     def _message_for(self, task_id: str) -> str:
@@ -1133,10 +1292,18 @@ class Engine:
                 state.phase_id, 0.0
             ) + max(0.0, state.ended_ts - state.phase_started_ts)
             state.phase_started_ts = None
+        if (
+            state.phase_id
+            and state.phase_status != "timeout"
+            and diag is Diagnosis.DONE
+        ):
+            state.phase_status = "completed"
         state.save(self.paths.state)
 
         ledger = read_json(self.paths.ledger)
         report = render_markdown(state, ledger)
+        if state.phase_timeout_reason:
+            report += f"\n\n## Phase timeout\n{state.phase_timeout_reason}\n"
         report += "\n\n## Kick history\n"
         for line in self.events.path.read_text(encoding="utf-8").splitlines():
             try:
