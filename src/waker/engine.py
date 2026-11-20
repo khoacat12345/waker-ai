@@ -6,10 +6,12 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from . import detector, evidence, injector, scheduler
 from .adapters.base import Adapter, TurnContext
 from .adapters.generic import GenericProcessAdapter
+from .budget import parse_duration
 from .blind_runner import grade_vault, summarize
 from .vault import Vault
 from .vault_validate import validate_vault
@@ -107,6 +109,47 @@ class EngineConfig:
     anti_slop: bool = True
     slop_config: object | None = None
     slop_baseline: bool = True
+
+
+def _extend_timed_out_phase(state: RunState, seconds: float) -> dict[str, Any]:
+    """Extend the active timed-out phase and the run wall clock in place."""
+    if seconds <= 0:
+        raise ValueError("extend duration must be > 0")
+    if not state.phase_id or state.phase_status != "timeout":
+        raise RuntimeError("run has no timed-out phase to extend")
+    phase_index = next(
+        (index for index, item in enumerate(state.phases) if item.get("id") == state.phase_id),
+        None,
+    )
+    if phase_index is None:
+        raise RuntimeError(f"phase {state.phase_id} not found in run state")
+    item = dict(state.phases[phase_index])
+    raw_budget = item.get("budget")
+    if raw_budget in (None, ""):
+        raise RuntimeError(f"phase {state.phase_id} has no budget to extend")
+    try:
+        old_budget = parse_duration(raw_budget)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"phase {state.phase_id} budget is invalid: {exc}") from exc
+    new_budget = old_budget + seconds
+    item["budget"] = f"{new_budget:.3f}s"
+    state.phases[phase_index] = item
+    old_wall = state.max_wall_clock
+    if state.max_wall_clock and state.max_wall_clock > 0:
+        state.max_wall_clock += seconds
+    state.phase_status = "running"
+    state.phase_timeout_reason = None
+    state.phase_started_ts = time.time()
+    return {
+        "phase": state.phase_id,
+        "extend_seconds": round(seconds, 3),
+        "extend_minutes": round(seconds / 60, 2),
+        "old_budget": round(old_budget, 3),
+        "new_budget": round(new_budget, 3),
+        "old_max_wall_clock": old_wall,
+        "new_max_wall_clock": state.max_wall_clock,
+        "approved_by": "user",
+    }
 
 
 class Engine:
@@ -273,6 +316,7 @@ class Engine:
         run_id: str,
         adapter: Adapter | None = None,
         max_kicks: int | None = None,
+        extend_seconds: float | None = None,
     ) -> "Engine":
         """Attach to an interrupted (or failed) run and continue it."""
         root = Path(repo).resolve()
@@ -286,6 +330,9 @@ class Engine:
             )
         acquire_run_lock(paths, run_id)
 
+        extension = None
+        if extend_seconds is not None:
+            extension = _extend_timed_out_phase(state, extend_seconds)
         tasks = [Task.from_dict(item) for item in state.tasks]
         constraints = [Task.from_dict(item) for item in state.constraints]
         phases = [PhaseSpec.from_dict(item) for item in state.phases]
@@ -318,6 +365,8 @@ class Engine:
         engine.state = state
         engine.paths = paths
         engine.events = EventLog(paths.events)
+        if extension:
+            engine.events.append("budget_extended", **extension)
         engine._setup_vault(validate_missing=False)
         cache_path = paths.root / "verify_cache.json"
         if cache_path.exists():
