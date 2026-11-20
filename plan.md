@@ -1966,4 +1966,46 @@ Nếu instruction-only vẫn bị bỏ qua, làm theo §26.8:
 
 **Execution plan:** [`docs/GRILL_ME_TIMEOUT_EXECUTION_PLAN.md`](docs/GRILL_ME_TIMEOUT_EXECUTION_PLAN.md)
 
-**Checkpoint: RELEASED — v2.2.0 package built and `twine check` validated; publish pending approval.**
+**Checkpoint: RELEASED — v2.3.0 published to PyPI and GitHub.**
+
+---
+
+## 28. Roadmap: Aeneas Protocol — On-Demand Semantic Gatekeeper (Cold-Standby LLM Arbiter)
+
+### 28.1 Bối cảnh & Vấn đề giải quyết (Tại sao cần Aeneas khi đã có Anti-Slop & Sandbox?)
+Waker đã giải quyết triệt để ~90% lỗi kỹ thuật và hallucination phổ biến bằng:
+- **Anti-Slop Engine:** Chặn nuốt lỗi (`except: pass`), chặn test assertion rỗng, cấm lạm dụng dummy mock bằng deterministic AST/regex rules.
+- **Sandboxed Coder & Isolated Worktree:** Đảm bảo worker không làm ô nhiễm host và đo lường exit code khách quan.
+- **Deterministic Watchdog:** Đo PID, timeout budget, heartbeat, exit code `0/1`.
+
+**Khoảng trống còn lại (The 10% Semantic Gap):**
+1. **Lạc đề nghiệp vụ (Semantic Drift / False Green):**
+   - Coder viết test pass 100%, không vi phạm anti-slop, exit code `0`, nhưng **hiểu sai hoặc làm ngược yêu cầu bài toán ban đầu (Prompt Intent)**.
+   - Deterministic rules không thể đọc hiểu ngôn ngữ tự nhiên để đối chiếu yêu cầu với git diff.
+2. **Xung đột hợp đồng liên phase (Cross-Phase Architectural Collision):**
+   - Từng phase chạy độc lập trong worktree đều xanh, nhưng khi ghép nối lại có nguy cơ làm gãy data contract ngầm của phase trước đó.
+3. **Bế tắc tự sửa lỗi (Coder Retry Deadlock):**
+   - Khi Coder sửa fail $\ge 2$ lần, việc ném toàn bộ log terminal thô khiến Coder dễ bị luẩn quẩn trong vòng lặp ảo giác.
+
+### 28.2 Nguyên lý thiết kế: Cold-Standby & Zero-Overhead (Chi phí tối thiểu)
+- **KHÔNG chạy 24/7:** Aeneas ở trạng thái ngủ đông (dormant / cold-standby), chi phí tài nguyên = $0 khi pipeline chạy bình thường.
+- **Zero-trust & Veto Power:** Có quyền bác bỏ (Reject) hoặc cách ly (Quarantine) worktree nếu vi phạm hợp đồng nghiệp vụ hoặc sai lệch yêu cầu.
+- **Trọng tài theo yêu cầu (On-Demand Arbitrator):** Chỉ được đánh thức dưới đúng 2 điều kiện kích hoạt ngặt nghèo.
+
+### 28.3 Cơ chế kích hoạt (2 Trigger Gates)
+1. **Gate 1 — Circuit Breaker Diagnosis (Kê đơn thuốc khi bế tắc):**
+   - **Kích hoạt khi:** Worker chạy 1 task bị fail test $\ge 2$ lần liên tiếp.
+   - **Nhiệm vụ:** Aeneas đọc git diff + failure log, sinh bản chẩn đoán súc tích (tối đa 3 gạch đầu dòng) chỉ rõ nguyên nhân gốc rễ và hướng sửa để Coder fix dứt điểm trong 1 turn, tránh đốt token vô nghĩa.
+2. **Gate 2 — Final Semantic Sanity Gate (Thẩm định ngữ nghĩa trước khi Merge):**
+   - **Kích hoạt khi:** Toàn bộ test suite đã pass (exit code 0), trước khi thực hiện merge nhánh vào `main`.
+   - **Nhiệm vụ:** Đối chiếu Task Contract / Initial Prompt với tổng thể Git Diff.
+   - **Phán quyết:**
+     - `VERDICT: APPROVE` kèm chữ ký JSON -> Waker tiến hành merge.
+     - `VERDICT: REJECT / QUARANTINE` nếu phát hiện sai lệch yêu cầu nghiệp vụ hoặc sửa lén ngoài scope contract.
+
+### 28.4 Khả năng mở rộng tương lai (Room for Improvement)
+- Tương thích cắm model local siêu nhẹ fine-tuned theo Hiến pháp (như `KV-Aeneas` 1.5B GGUF chạy offline qua Ollama/llama.cpp) hoặc fallback qua OpenCode CLI (`glm-5.3-flash-free` / `deepseek-v4.1-flash-free`).
+- Tạo tiền đề cho kiến trúc Swarm 3 tầng hoàn chỉnh:
+  - `KV-Zeus` (Strategy / Task DAG Planner)
+  - `Waker Engine` (Deterministic Harness & Process Isolation)
+  - `KV-Aeneas` (On-Demand Semantic Gatekeeper & Arbitrator)
