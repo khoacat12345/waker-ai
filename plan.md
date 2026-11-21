@@ -2009,3 +2009,23 @@ Waker đã giải quyết triệt để ~90% lỗi kỹ thuật và hallucinatio
   - `KV-Zeus` (Strategy / Task DAG Planner)
   - `Waker Engine` (Deterministic Harness & Process Isolation)
   - `KV-Aeneas` (On-Demand Semantic Gatekeeper & Arbitrator)
+
+### 28.5 Thực chứng Phase 1 & Tiến hóa Kiến trúc: Neuro-Symbolic Symbiosis & Dual-Stream Zeus
+Sau thực nghiệm đêm 20-21/11/2026, kiến trúc được chuẩn hóa chính thức:
+
+1. **Thực chứng Năng lực (Milestone 81 MB LoRA):**
+   - Đã huấn luyện thành công adapter `kv-core-4b-lora.gguf` (81 MB) trên nền `Qwen3.5-4B` qua 600 mẫu dữ liệu.
+   - Kết quả: **DAG Planning đạt 83% (5/6)** và **Semantic Gate đạt 67% với 100% Precision (4/6)**, triệt tiêu hoàn toàn tật xấu shotgun rules.
+   - Thống nhất quy về **1 model lõi (`kv-core-4b`) đóng 2 vai (Zeus & Aeneas)** bằng system prompt riêng biệt, tiết kiệm 50% tài nguyên RAM/VRAM. Tác vụ đưa thư (Hermes) giao 100% cho code Python (0ms latency, zero-token).
+
+2. **Cộng sinh Neuro-Symbolic (Waker + AI):**
+   - Waker đóng vai trò **Bộ lọc biểu tượng cứng (Deterministic Filter)**: Quét sạch 90% lỗi cú pháp, AST, sandbox, exit code với chi phí = 0đ và 0 token.
+   - AI đóng vai trò **Bộ não ngữ nghĩa**: Nhận báo cáo tinh gọn từ Waker, dồn 100% năng lực nơ-ron vào chẩn đoán nguyên nhân gốc (root_cause) và đề xuất phương án phục hồi.
+
+3. **Cơ chế Tự Phản Biện Đa Luồng của Zeus (Dual-Stream Self-Debate):**
+   - Vị thế "Tối cao" của Zeus không phải là mệnh lệnh độc đoán, mà là **Quyết định có độ chính xác và tối ưu cao nhất**.
+   - Trước khi chốt Task DAG, model kích hoạt 2 luồng nội tại:
+     * *Luồng 1 (Proponent):* Đề xuất phương án phân rã task.
+     * *Luồng 2 (Adversary):* Bắt bẻ rủi ro (nghẽn database, xung đột dependency, lãng phí token).
+     * *Tổng hợp (Synthesis):* So sánh 2 kịch bản mô phỏng để đưa ra quyết định cuối cùng sạch kẽ hở.
+
